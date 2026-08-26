@@ -13,13 +13,13 @@
 #ifdef RMW_UXRCE_TRANSPORT_CUSTOM
 
 // --- USB CDC Handles ---
-extern USBD_CDC_ItfTypeDef USBD_Interface_fops_FS;
-extern USBD_HandleTypeDef hUsbDeviceFS;
+extern USBD_CDC_ItfTypeDef USBD_Interface_fops_HS;
+extern USBD_HandleTypeDef hUsbDeviceHS;
 
 // --- Reimplemented USB CDC callbacks ---
-static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum);
-static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
-static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len);
+static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum);
+static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
+static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len);
 
 // Line coding: Rate: 115200bps; CharFormat: 1 Stop bit; Parity: None; Data: 8 bits
 static uint8_t line_coding[7] = {0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08};
@@ -35,7 +35,7 @@ volatile bool g_write_complete = false;
 bool initialized = false;
 
 // Transmission completed callback
-static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
+static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 {
     (void) Buf;
     (void) Len;
@@ -46,7 +46,7 @@ static int8_t CDC_TransmitCplt_FS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
 }
 
 // USB CDC requests callback
-static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
+static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 {
     switch(cmd)
     {
@@ -73,9 +73,9 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 }
 
 // Data received callback
-static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
+static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
 {
-	USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+	USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
 
     // Circular buffer
     if ((it_tail + *Len) > USB_BUFFER_SIZE)
@@ -93,7 +93,7 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 		it_tail += *Len;
     }
 
-	USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+	USBD_CDC_ReceivePacket(&hUsbDeviceHS);
 
 	return (USBD_OK);
 }
@@ -103,9 +103,9 @@ bool cubemx_transport_open(struct uxrCustomTransport * transport){
     if (!initialized)
     {
         // USB is initialized on generated main code: Replace default callbacks here
-        USBD_Interface_fops_FS.Control = CDC_Control_FS;
-        USBD_Interface_fops_FS.Receive = CDC_Receive_FS;
-        USBD_Interface_fops_FS.TransmitCplt = CDC_TransmitCplt_FS;
+        USBD_Interface_fops_HS.Control = CDC_Control_HS;
+        USBD_Interface_fops_HS.Receive = CDC_Receive_HS;
+        USBD_Interface_fops_HS.TransmitCplt = CDC_TransmitCplt_HS;
         initialized = true;
     }
 
@@ -116,8 +116,8 @@ bool cubemx_transport_close(struct uxrCustomTransport * transport){
     return true;
 }
 
-size_t cubemx_transport_write(struct uxrCustomTransport* transport, uint8_t * buf, size_t len, uint8_t * err){
-	uint8_t ret = CDC_Transmit_FS(buf, len);
+size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err){
+	uint8_t ret = CDC_Transmit_HS((uint8_t*)buf, len);
 
 	if (USBD_OK != ret)
 	{

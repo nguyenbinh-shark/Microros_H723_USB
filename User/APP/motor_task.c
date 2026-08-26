@@ -22,6 +22,7 @@
 #include "cmsis_os.h"
 #include "robot_config.h"
 #include "kinematics.h"
+#include <stdio.h>
 
 /* Motor CAN IDs and master ID */
 #define MOTOR_ID_LEFT    1U
@@ -51,11 +52,13 @@ void motor_enable_set(uint8_t enable)
     g_system_enabled = enable;
     if (enable)
     {
+        printf("[MOTOR] Enabling FDCAN1 & FDCAN3 motors...\r\n");
         rs_ext_enable(&hfdcan1, 1U, MASTER_ID);   /* Left motor  */
         rs_ext_enable(&hfdcan3, 1U, MASTER_ID);   /* Right motor */
     }
     else
     {
+        printf("[MOTOR] Disabling motors (Brake/Idle)...\r\n");
         rs_ext_disable(&hfdcan1, 1U, MASTER_ID, 0);
         rs_ext_disable(&hfdcan3, 1U, MASTER_ID, 0);
     }
@@ -72,6 +75,7 @@ static inline float clampf(float val, float lo, float hi)
 /* ── Task body — Closed-loop Velocity Control ─────────────────────── */
 void Motor_task(void)
 {
+    printf("[MOTOR] Motor_task started.\r\n");
     /* Enable Transceivers CAN1, CAN3 (PC13, PC15 HIGH) */
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_SET);
     osDelay(50);
@@ -79,6 +83,7 @@ void Motor_task(void)
     /* Khởi tạo cấu hình bộ lọc và ngắt FDCAN1 + FDCAN3 */
     FDCAN1_Config();
     FDCAN3_Config();
+    printf("[MOTOR] FDCAN1 & FDCAN3 Filters Configured.\r\n");
     osDelay(50);
 
     /* Enable tất cả motor lúc khởi động */

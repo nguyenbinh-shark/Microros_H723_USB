@@ -20,6 +20,7 @@
 #include "can_bsp.h"
 #include "bsp_dwt.h"
 #include "cmsis_os.h"
+#include <stdio.h>
 
 INS_t INS;
 
@@ -46,6 +47,7 @@ void INS_Init(void)
 
 void INS_task(void)
 {
+	 printf("[INS] INS_task started (Mahony AHRS filter active).\r\n");
 	 INS_Init();
 	 DWT_GetDeltaT(&INS_DWT_Count);  /* Reset counter to "now" — avoids giant dt on first loop */
 

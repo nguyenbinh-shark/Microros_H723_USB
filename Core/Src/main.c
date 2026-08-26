@@ -29,6 +29,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include "bsp_dwt.h"
 #include "BMI088driver.h"
 #include "can_bsp.h"
@@ -117,8 +118,15 @@ int main(void)
   MX_TIM12_Init();
   MX_FDCAN3_Init();
   /* USER CODE BEGIN 2 */
+  printf("\r\n========================================\r\n");
+  printf("[BOOT] STM32H723 Robot Controller Starting...\r\n");
+  printf("[BOOT] Debug Serial: UART7 @ 115200 bps (PE8 TX)\r\n");
+
   DWT_Init(550);          /* STM32H723 @ 550 MHz, before RTOS */
-  (void)BMI088_init(&hspi2, 0); /* Try init BMI088, do not block MCU if IMU missing */
+  uint8_t imu_ret = BMI088_init(&hspi2, 0); /* Try init BMI088, do not block MCU if IMU missing */
+  printf("[BOOT] BMI088 IMU: %s\r\n", (imu_ret == 0) ? "OK" : "FAILED / NOT FOUND");
+  printf("[BOOT] Launching FreeRTOS Kernel...\r\n");
+  printf("========================================\r\n\r\n");
   /* USER CODE END 2 */
 
   /* Init scheduler */
@@ -170,7 +178,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 2;
   RCC_OscInitStruct.PLL.PLLN = 16;
   RCC_OscInitStruct.PLL.PLLP = 1;
-  RCC_OscInitStruct.PLL.PLLQ = 4;
+  RCC_OscInitStruct.PLL.PLLQ = 2;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
@@ -211,9 +219,9 @@ void PeriphCommonClock_Config(void)
   */
   PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
   PeriphClkInitStruct.PLL2.PLL2M = 2;
-  PeriphClkInitStruct.PLL2.PLL2N = 16;
+  PeriphClkInitStruct.PLL2.PLL2N = 25;
   PeriphClkInitStruct.PLL2.PLL2P = 2;
-  PeriphClkInitStruct.PLL2.PLL2Q = 2;
+  PeriphClkInitStruct.PLL2.PLL2Q = 3;
   PeriphClkInitStruct.PLL2.PLL2R = 2;
   PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
   PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;

@@ -183,5 +183,18 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* uartHandle)
 }
 
 /* USER CODE BEGIN 1 */
+#include <stdio.h>
 
+int __io_putchar(int ch)
+{
+  HAL_UART_Transmit(&huart7, (uint8_t *)&ch, 1, 10);
+  return ch;
+}
+
+int _write(int file, char *ptr, int len)
+{
+  (void)file;
+  HAL_UART_Transmit(&huart7, (uint8_t *)ptr, (uint16_t)len, 100);
+  return len;
+}
 /* USER CODE END 1 */

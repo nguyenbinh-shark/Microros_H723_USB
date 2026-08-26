@@ -113,37 +113,13 @@ void FDCAN1_Config(void)
     HAL_FDCAN_Start(&hfdcan1);
 }
 
+#if 0
 /* ── FDCAN2 Config (Filter + Notification + Start) ────────────── */
 void FDCAN2_Config(void)
 {
-    FDCAN_FilterTypeDef sFilterConfig;
-
-    HAL_FDCAN_Stop(&hfdcan2);
-
-    /* Accept all Standard ID frames to RX FIFO0 */
-    sFilterConfig.IdType = FDCAN_STANDARD_ID;
-    sFilterConfig.FilterIndex = 0;
-    sFilterConfig.FilterType = FDCAN_FILTER_MASK;
-    sFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-    sFilterConfig.FilterID1 = 0x000;
-    sFilterConfig.FilterID2 = 0x000;
-    HAL_FDCAN_ConfigFilter(&hfdcan2, &sFilterConfig);
-
-    /* Accept all Extended ID frames to RX FIFO0 */
-    FDCAN_FilterTypeDef sExtFilterConfig;
-    sExtFilterConfig.IdType = FDCAN_EXTENDED_ID;
-    sExtFilterConfig.FilterIndex = 0;
-    sExtFilterConfig.FilterType = FDCAN_FILTER_MASK;
-    sExtFilterConfig.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-    sExtFilterConfig.FilterID1 = 0x00000000;
-    sExtFilterConfig.FilterID2 = 0x00000000;
-    HAL_FDCAN_ConfigFilter(&hfdcan2, &sExtFilterConfig);
-
-    HAL_FDCAN_ConfigGlobalFilter(&hfdcan2, FDCAN_ACCEPT_IN_RX_FIFO0, FDCAN_ACCEPT_IN_RX_FIFO0,
-                                  FDCAN_FILTER_REMOTE, FDCAN_FILTER_REMOTE);
-    HAL_FDCAN_ActivateNotification(&hfdcan2, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0);
-    HAL_FDCAN_Start(&hfdcan2);
+    /* FDCAN2 not used on this target */
 }
+#endif
 
 /* ── FDCAN3 Config (Filter + Notification + Start) ────────────── */
 void FDCAN3_Config(void)

@@ -25,6 +25,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
@@ -152,6 +153,8 @@ void StartDefaultTask(void *argument)
   /* init code for USB_DEVICE */
   MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
+  printf("[ROS] StartDefaultTask running. Init USB custom transport...\r\n");
+
   rmw_uros_set_custom_transport(
     true,
     (void *) NULL,
@@ -167,6 +170,7 @@ void StartDefaultTask(void *argument)
   freeRTOS_allocator.zero_allocate = microros_zero_allocate;
 
   if (!rcutils_set_default_allocator(&freeRTOS_allocator)) {
+    printf("[ROS_ERR] Failed to set default allocator!\r\n");
     for(;;) osDelay(10);
   }
 
@@ -200,38 +204,36 @@ void StartDefaultTask(void *argument)
   static char                       odom_frame_id[]    = "odom";
   static char                       odom_child_id[]    = "base_link";
 
+  /* Wait for USB enumeration and micro-ROS agent connection */
+  osDelay(500);
+  printf("[ROS] Waiting for micro-ROS Agent connection over USB CDC...\r\n");
+  while (rmw_uros_ping_agent(100, 1) != RMW_RET_OK) {
+    osDelay(100);
+  }
+  printf("[ROS] micro-ROS Agent CONNECTED! Initializing ROS 2 entities...\r\n");
+
   allocator = rcl_get_default_allocator();
   rclc_support_init(&support, 0, NULL, &allocator);
   rmw_uros_sync_session(1000);
   rclc_node_init_default(&node, "stm32h7_node", "", &support);
 
-  /* --- Publishers (imu/euler/odom disabled to save UART bandwidth) --- */
-  // rclc_publisher_init_default(
-  //   &pub_imu, &node,
-  //   ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
-  //   "imu");
-
-  // rclc_publisher_init_default(
-  //   &pub_euler, &node,
-  //   ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Vector3),
-  //   "euler");
-
+  /* --- Publishers --- */
   rclc_publisher_init_default(
+    &pub_motor_fb,
+    &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, JointState),
     "motor_fb");
 
-  // rclc_publisher_init_default(
-  //   &pub_odom, &node,
-  //   ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry),
-  //   "odom");
-
   /* --- Subscribers --- */
   rclc_subscription_init_default(
-    &sub_cmd_vel, &node,
+    &sub_cmd_vel,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
     "cmd_vel");
 
   rclc_subscription_init_default(
-    &sub_motor_enable, &node,
+    &sub_motor_enable,
+    &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool),
     "motor_enable");
 
@@ -243,6 +245,8 @@ void StartDefaultTask(void *argument)
     &cmd_vel_callback, ON_NEW_DATA);
   rclc_executor_add_subscription(&executor, &sub_motor_enable, &motor_enable_msg,
     &motor_enable_callback, ON_NEW_DATA);
+
+  printf("[ROS] Node [stm32h7_node] Ready | Pub: [/motor_fb] | Sub: [/cmd_vel, /motor_enable]\r\n");
 
   /* Init IMU message (fixed-size fields, use static frame_id) */
   memset(&imu_msg, 0, sizeof(imu_msg));
@@ -359,6 +363,7 @@ static void cmd_vel_callback(const void *msg_in)
   const geometry_msgs__msg__Twist *msg = (const geometry_msgs__msg__Twist *)msg_in;
   if (msg != NULL)
   {
+    printf("[CMD_VEL] vx=%.2f m/s, wz=%.2f rad/s\r\n", (float)msg->linear.x, (float)msg->angular.z);
     robot_cmd_set((float)msg->linear.x, (float)msg->angular.z, 1U);
   }
 }
@@ -367,7 +372,11 @@ static void cmd_vel_callback(const void *msg_in)
 static void motor_enable_callback(const void *msg_in)
 {
   const std_msgs__msg__Bool *msg = (const std_msgs__msg__Bool *)msg_in;
-  motor_enable_set(msg->data ? 1U : 0U);
+  if (msg != NULL)
+  {
+    printf("[MOTOR_EN] State=%d\r\n", msg->data ? 1 : 0);
+    motor_enable_set(msg->data ? 1U : 0U);
+  }
 }
 
 void INS_Task_Entry(void *argument)
@@ -383,6 +392,20 @@ void Observe_Task_Entry(void *argument)
 void Motor_Task_Entry(void *argument)
 {
   Motor_task();
+}
+
+/* ── FreeRTOS Error Hooks ─────────────────────────────────────────── */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+  (void)xTask;
+  printf("\r\n[FATAL] Stack Overflow in Task: [%s]!\r\n", pcTaskName ? pcTaskName : "Unknown");
+  for (;;) { osDelay(100); }
+}
+
+void vApplicationMallocFailedHook(void)
+{
+  printf("\r\n[FATAL] FreeRTOS Heap Allocation Failed (Out of Memory)!\r\n");
+  for (;;) { osDelay(100); }
 }
 /* USER CODE END Application */
 

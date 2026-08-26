@@ -18,6 +18,7 @@
 #include "can_bsp.h"
 #include "cmsis_os.h"
 #include <string.h>
+#include <stdio.h>
 
 #define OBSERVE_DT_MS  3U                          /* task period (ms)  */
 #define OBSERVE_DT_S   (OBSERVE_DT_MS * 0.001f)   /* period in seconds */
@@ -88,12 +89,14 @@ static void velKF_Update(float v_odom, float a_imu)
 /* ── Task ─────────────────────────────────────────────────────────── */
 void Observe_task(void)
 {
+    printf("[OBSERVE] Task started. Waiting for INS convergence...\r\n");
     /* Wait until Mahony filter has converged (ins_flag set after 3s) */
     while (INS.ins_flag == 0)
     {
         osDelay(1);
     }
 
+    printf("[OBSERVE] INS Converged! Velocity Observer Kalman Filter Active.\r\n");
     velKF_Init();
 
     for (;;)
