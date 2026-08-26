@@ -1,355 +1,200 @@
-# STM32H723 micro-ROS Node — Hướng dẫn sử dụng
+# STM32H723 micro-ROS Robot Controller (USB CDC)
 
-Board STM32H723VGT6 chạy FreeRTOS + micro-ROS Jazzy. Hoạt động như một **ROS 2 node robot vi sai (differential drive)**: publish IMU, odometry, phản hồi motor; subscribe lệnh điều khiển `/cmd_vel`. Tích hợp Kalman filter ước lượng vận tốc để bù trượt bánh.
-
-> 📚 **Tài liệu kỹ thuật chi tiết:** Xem [docs/TECHNICAL.md](docs/TECHNICAL.md)  
-> 🔧 **Hướng dẫn gỡ lỗi (debug) với VS Code:** Xem [docs/DEBUG.md](docs/DEBUG.md)  
-> 📖 **Manual motor CyberGear:** Xem [docs/reference/cybergear_motor.md](docs/reference/cybergear_motor.md)
+Firmware điều khiển **Robot vi sai (Differential Drive)** chạy trên vi điều khiển **STM32H723VGT6 (550 MHz)** kết hợp **FreeRTOS** và **micro-ROS** giao tiếp qua **cổng USB CDC tốc độ cao (12 Mbps)**.
 
 ---
 
-## Phần cứng
-
-| Thành phần | Chi tiết |
-|---|---|
-| Vi điều khiển | STM32H723VGT6 @ 550 MHz |
-| IMU | BMI088 (SPI2) — accel + gyro |
-| Motor | 2× CyberGear FDCAN (ID 1 = trái/FDCAN1, ID 2 = phải/FDCAN2) |
-| Giao tiếp PC | UART7 → USB-UART CH340 (`/dev/ttyUSB0`) |
-| Baud rate | 115200 bps |
+## 📌 Tính năng nổi bật
+- **Giao tiếp micro-ROS qua USB CDC**: Truyền nhận trực tiếp với ROS 2 qua cổng USB Type-C của STM32 (nhận diện như `/dev/ttyACM0` trên Linux hoặc `COMx` trên Windows), băng thông lớn và độ trễ cực thấp.
+- **Kênh Serial Debug độc lập**: Cổng **UART7 (chân PE8 @ 115200 bps)** xuất log `printf` thời gian thực (trạng thái boot, kết nối agent, lệnh `/cmd_vel`, phát hiện lỗi HardFault / tràn RAM).
+- **Bộ lọc tư thế Mahony AHRS**: Đọc dữ liệu từ IMU **BMI088 (SPI2)** với tần số 1 kHz để tính toán góc nghiêng Roll, Pitch, Yaw và Quaternion.
+- **Bộ lọc Kalman (Velocity Observer)**: Kết hợp vận tốc bánh xe và gia tốc IMU để ước lượng vận tốc thực tế, bù trượt bánh.
+- **Màn hình LCD Debug (ST7789V 240x280 SPI1)**: Hiển thị trực quan Dashboard thời gian thực trên bo mạch (trạng thái kết nối micro-ROS Agent, vận tốc `/cmd_vel`, tốc độ & moment 2 bánh RobStride, góc nghiêng IMU Roll/Pitch/Yaw, bus CAN).
+- **Điều khiển 2 Motor RobStride**: Điều khiển qua 2 bus độc lập **FDCAN1 (Bánh trái)** và **FDCAN3 (Bánh phải)** bằng thuật toán vòng kín FOC Stiffness Control.
 
 ---
 
-## Kiến trúc phần mềm (FreeRTOS tasks)
+## 🔌 Sơ đồ Chân & Kết nối Phần cứng
 
-| Task | Priority | Period | Chức năng |
-|---|---|---|---|
-| `INS_Task` | Realtime | 1 ms | Đọc BMI088, chạy Mahony AHRS → quaternion |
-| `OBSERVE_Task` | High | 3 ms | Kalman filter: fuse encoder + IMU accel → `v_filter`, `omega_filter` |
-| `MOTOR_Task` | AboveNormal | 10 ms | Diff-drive kinematics → MIT mode CyberGear |
-| `defaultTask` | Normal | ~20 ms | micro-ROS: publish 4 topics, spin executor |
-
----
-
-## ROS 2 Topics
-
-| Topic | Type | Chiều | Mô tả |
-|---|---|---|---|
-| `/imu` | `sensor_msgs/Imu` | Publish 50Hz | Quaternion · gyro (rad/s) · accel (m/s²) |
-| `/euler` | `geometry_msgs/Vector3` | Publish 50Hz | Roll · Pitch · Yaw (đơn vị: **độ**) |
-| `/motor_fb` | `sensor_msgs/JointState` | Publish 50Hz | Vị trí (rad) · vận tốc (rad/s) motor ID 1 |
-| `/odom` | `nav_msgs/Odometry` | Publish 50Hz | Pose (dead-reckoning) · twist (Kalman-filtered) |
-| `/cmd_vel` | `geometry_msgs/Twist` | Subscribe | `linear.x` (m/s) · `angular.z` (rad/s) |
-
-Node name: `stm32h7_node`. Frame: `odom` → `base_link`.
+| Ngoại vi | Chân STM32 | Chức năng / Kết nối |
+| :--- | :--- | :--- |
+| **micro-ROS (USB CDC)** | **PA11 (DM), PA12 (DP)** | Cổng USB Type-C chính cắm vào máy tính / Raspberry Pi |
+| **Debug Serial Log** | **PE8 (UART7_TX)** | Cắm vào chân **RX** của mạch USB-TTL (Baudrate: **115200**) |
+| **Màn hình LCD (SPI1)** | **PB3 (SCK), PD7 (MOSI)**<br>**PE15 (CS), PD10 (DC), PB11 (RES), PB10 (BLK)** | Màn hình màu ST7789V hiển thị Dashboard gỡ lỗi |
+| **Nút điều hướng 5 chiều (ADC1)** | **PA5 (ADC1_IN19)** | Nút gạt 5 chiều chuyển 4 trang hiển thị trên màn hình LCD |
+| **Tay cầm RC SBUS/DBUS (UART5)** | **PD2 (UART5_RX)** | Cổng nhận tín hiệu tay cầm RC (100k 8E2, DMA1 Stream 4) |
+| **IMU BMI088 (SPI2)** | **PB13 (SCK), PB14 (MISO), PB15 (MOSI)**<br>**PC4 (ACC_CS), PC5 (GYRO_CS)** | Cảm biến IMU 6-DOF trên board |
+| **Motor Trái (FDCAN1)** | **PB8 (RX), PB9 (TX)** · **PC13 (EN)** | CAN Bus Motor 1 (Left) |
+| **Motor Phải (FDCAN3)** | **PD0 (RX), PD1 (TX)** · **PC15 (EN)** | CAN Bus Motor 2 (Right) |
 
 ---
 
-## Cài đặt micro-ROS Agent (chỉ làm 1 lần)
+## 📡 Danh sách ROS 2 Topics
 
-Yêu cầu: ROS 2 Jazzy đã cài trên Ubuntu 24.04.
+| Topic | Kiểu Message | Chiều | Tần số / Sự kiện | Mô tả |
+| :--- | :--- | :---: | :---: | :--- |
+| `/cmd_vel` | `geometry_msgs/msg/Twist` | **Sub** | Nhận tức thời | Vận tốc dài `linear.x` (m/s) và vận tốc góc `angular.z` (rad/s) |
+| `/motor_enable` | `std_msgs/msg/Bool` | **Sub** | Sự kiện | `true`: Bật motor chạy; `false`: Ngắt motor (thả trôi/phanh) |
+| `/motor_fb` | `sensor_msgs/msg/JointState` | **Pub** | 10 Hz (mặc định) | Phản hồi góc quay (rad), tốc độ (rad/s) và tải moment (Nm) |
+| `/imu` | `sensor_msgs/msg/Imu` | **Pub** | Tùy chọn (50Hz) | Quaternion, gia tốc và vận tốc góc |
+| `/odom` | `nav_msgs/msg/Odometry` | **Pub** | Tùy chọn (20Hz) | Tọa độ vị trí và vận tốc xe phục vụ Nav2 |
 
+> **Node Name**: `stm32h7_node`  
+> **Frame ID**: `odom` $\rightarrow$ `base_link` (IMU: `imu_link`)
+
+---
+
+## 🚀 Hướng dẫn Sử dụng Nhanh (Copy-Paste Code)
+
+### Bước 1: Cài đặt micro-ROS Agent trên Máy tính (Chỉ làm 1 lần)
+
+#### Cách A: Cài đặt trực tiếp trên Ubuntu (Khuyên dùng)
 ```bash
-mkdir -p ~/microros_ws/src && cd ~/microros_ws
-git clone -b jazzy https://github.com/micro-ROS/micro_ros_setup.git src/micro_ros_setup
+# Tạo workspace cho micro-ROS Agent
+mkdir -p ~/microros_ws/src && cd ~/microros_ws/src
+git clone -b $ROS_DISTRO https://github.com/micro-ROS/micro_ros_setup.git
 
+cd ~/microros_ws
 sudo apt update && rosdep update
 rosdep install --from-paths src --ignore-src -y
-
 colcon build
 source install/local_setup.bash
 
+# Build riêng gói Agent
 ros2 run micro_ros_setup create_agent_ws.sh
 ros2 run micro_ros_setup build_agent.sh
 source install/local_setup.bash
 ```
 
----
-
-## 🎯 Khởi động hệ thống (mỗi lần dùng)
-
-### Bước 1 — Kết nối board
-
-Cắm cáp CH340 từ board vào PC. Board tự khởi động, **không cần giữ phẳng** (dùng hardcoded offset, không calibrate).
-
-### Bước 2 — Forward USB vào WSL2 (Windows PowerShell — Admin)
-
-```powershell
-usbipd list                        # tìm CH340, ví dụ busid 1-2
-usbipd attach --wsl --busid 1-2
-```
-
-### Bước 3 — Chạy micro-ROS Agent (WSL2 Ubuntu)
-
+#### Cách B: Chạy nhanh qua Docker (Không cần cài đặt gì thêm)
 ```bash
-wsl -d Ubuntu-24.04
-
-sudo chmod 666 /dev/ttyUSB0
-source ~/microros_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
-```
-
-Chờ agent log `[3/3] Session established!` là board đã kết nối.
-
----
-
-## 🖥️ Bảng lệnh Terminal thường dùng
-
-### 📌 Bảng tổng quan nhanh
-
-| Bước | Mục đích | Môi trường thực thi | Cần quyền Admin? |
-|:----:|----------|---------------------|:----------------:|
-| **a** | Biên dịch firmware | WSL/Ubuntu | ❌ |
-| **b** | Chạy micro-ROS Agent | WSL/Ubuntu (terminal #1) | ❌ (dùng `sudo`) |
-| **c** | Tương tác robot qua ROS 2 | WSL/Ubuntu (terminal #2) | ❌ |
-| **d** | Chuyển tiếp USB vào WSL2 | Windows PowerShell | ✅ (Admin) |
-
-> 💡 **Quy trình tham khảo:** Làm theo thứ tự **d → b → c**. Bước `d` (chuyển tiếp USB) cần thực hiện **trước** để WSL nhìn thấy board STM32.
-
----
-
-### a. Biên dịch Firmware
-
-> **Môi trường:** WSL/Ubuntu · Thư mục: `/mnt/p/Prj_STM32/ros_h7`
-
-Xóa các file build cũ (chỉ khi cần làm sạch hoàn toàn):
-```bash
-make clean
-```
-
-Biên dịch code:
-```bash
-make -j$(nproc)
+docker run -it --rm -v /dev:/dev --privileged --net=host microros/micro-ros-agent:$ROS_DISTRO serial --dev /dev/ttyACM0
 ```
 
 ---
 
-### b. Chạy micro-ROS Agent
+### Bước 2: Kết nối Phần cứng & Khởi chạy
 
-> **Môi trường:** WSL/Ubuntu · Dùng **terminal #1**
-
-**1.** Cấp quyền cho cổng serial (tên cổng có thể là `ttyACM0` hoặc `ttyUSB0`):
-```bash
-sudo chmod 666 /dev/ttyACM0
-```
-
-**2.** Kích hoạt môi trường ROS 2:
-```bash
-source ~/microros_ws/install/setup.bash
-```
-
-**3.** Khởi động Agent:
-```bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0 -b 921600
-```
-
-> ⚠️ **Lưu ý:** Sau khi chạy lệnh này, cần **nhấn nút RESET** trên board STM32 để thiết lập kết nối.
+1. **Cắm cáp USB Type-C** từ cổng USB STM32 vào máy tính / Raspberry Pi.
+2. *(Tùy chọn)* Cắm module USB-TTL vào chân **PE8 (TX)** và **GND** để xem log debug trên Serial Monitor (Baudrate: **115200**).
+3. **Nếu dùng WSL2 trên Windows**, mở PowerShell (Admin) để chuyển tiếp cổng USB vào WSL:
+   ```powershell
+   usbipd list                          # Xem BUSID của thiết bị (VD: 1-2)
+   usbipd attach --wsl --busid 1-2      # Forward vào WSL
+   ```
+4. **Chạy micro-ROS Agent trên Ubuntu / WSL2**:
+   ```bash
+   sudo chmod 666 /dev/ttyACM0
+   source ~/microros_ws/install/setup.bash
+   ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyACM0
+   ```
+5. Khi kết nối thành công, terminal Agent sẽ hiển thị:
+   ```text
+   [1724687654.123] [micro_ros_agent] [INFO] Session established!
+   ```
 
 ---
 
-### c. Tương tác với Robot qua ROS 2
+## 📋 Bảng Lệnh Điều khiển & Kiểm tra Topic (Copy-Paste)
 
-> **Môi trường:** WSL/Ubuntu · Dùng **terminal #2** (đã chạy lệnh `source` ở phần **b**)
+Mở một Terminal mới (sau khi Agent đã chạy) và chạy các lệnh dưới đây:
 
-**Liệt kê tất cả các topic:**
+### 1. Kiểm tra danh sách Node và Topic
 ```bash
+# Xem danh sách các node đang online
+ros2 node list
+
+# Xem danh sách các topic
 ros2 topic list
 ```
 
-**Kiểm tra tần số của một topic** (ví dụ: `/odom`):
-```bash
-ros2 topic hz /odom
-```
-
-**Xem dữ liệu của một topic** (ví dụ: `/odom` hoặc `/imu`):
-```bash
-ros2 topic echo /odom
-```
-
-**Gửi lệnh điều khiển:**
-
-| Hành động | Lệnh |
-|-----------|------|
-| Chạy thẳng | `ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.1}, angular: {z: 0.0}}" --once` |
-| Xoay tại chỗ | `ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z: 0.1}}" --once` |
-| Dừng robot | `ros2 topic pub /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0}, angular: {z: 0.0}}" --once` |
-
----
-
-### d. Quản lý thiết bị USB (Windows PowerShell)
-
-> **Môi trường:** Windows PowerShell · **Yêu cầu quyền Admin**
->
-> Các lệnh này dùng để "chuyển tiếp" (forward) thiết bị USB từ Windows vào môi trường WSL2.
-
-**Liệt kê các thiết bị USB** (để tìm **BUSID** của thiết bị USB-to-Serial, ví dụ CH340):
-```powershell
-usbipd list
-```
-
-**Đính kèm (attach)** thiết bị vào WSL — thay `1-3` / `1-1` bằng BUSID thực tế vừa tìm được:
-```powershell
-usbipd attach --wsl --busid 1-3
-usbipd attach --wsl --busid 1-1
-```
-
-**Gỡ (detach)** thiết bị khỏi WSL — dùng khi muốn ngắt kết nối hoặc khi thiết bị bị "kẹt":
-```powershell
-usbipd detach --busid 1-3
-usbipd detach --busid 1-1
-```
-
----
-
-## Đọc odometry (Nav2)
-
-```bash
-ros2 topic echo /odom
-```
-
-Trường quan trọng:
-- `pose.pose.position.x/y` — vị trí dead-reckoning (m)
-- `pose.pose.orientation` — quaternion từ Mahony AHRS
-- `twist.twist.linear.x` — vận tốc Kalman-filtered (slip-resistant)
-- `twist.twist.angular.z` — yaw rate từ gyro
-
----
-
-## Đọc dữ liệu IMU
-
-Mở terminal WSL thứ 2:
-
-```bash
-source ~/microros_ws/install/setup.bash
-
-# Góc Euler (độ) — ổn định sau ~3 giây
-ros2 topic echo /euler
-
-# Dữ liệu IMU đầy đủ (quaternion + gyro + accel)
-ros2 topic echo /imu
-
-# Tần số publish thực tế
-ros2 topic hz /euler
-```
-
-**Giá trị bình thường khi board đặt phẳng:**
-- `/euler`: x ≈ 0°, y ≈ 0°, z = yaw tùy hướng
-- `/imu` angular_velocity: |x|, |y|, |z| < 0.05 rad/s
-- `/imu` linear_acceleration: z ≈ 9.81 m/s²
-
-> **Lưu ý:** Góc Euler chỉ hợp lệ sau 3 giây khởi động (`ins_flag = 1`). Trước đó giá trị bằng 0.
-
----
-
-## Đọc phản hồi motor
-
+### 2. Xem dữ liệu phản hồi từ Motor
 ```bash
 ros2 topic echo /motor_fb
 ```
 
+### 3. Bật / Tắt Motor
+```bash
+# Bật Motor (Enable)
+ros2 topic pub --once /motor_enable std_msgs/msg/Bool "{data: true}"
+
+# Tắt Motor (Disable / Safe stop)
+ros2 topic pub --once /motor_enable std_msgs/msg/Bool "{data: false}"
 ```
-name: [motor_1]
-position: [1.234]   # rad
-velocity: [0.567]   # rad/s
-effort:   [0.0]
+
+### 4. Gửi lệnh lái Robot di chuyển
+```bash
+# Chạy thẳng tới với vận tốc 0.2 m/s
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.2, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+
+# Xoay tại chỗ sang trái với tốc độ 0.5 rad/s
+ros2 topic pub -r 10 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.5}}"
+
+# Dừng hẳn robot
+ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}"
+```
+
+### 5. Lái robot bằng bàn phím (Teleop Keyboard)
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
 ---
 
-## Gửi lệnh điều khiển motor
+## 🛠️ Hướng dẫn Biên dịch Firmware (Build Code)
 
+Dự án sử dụng file `Makefile` tiêu chuẩn với trình biên dịch `arm-none-eabi-gcc`.
+
+### Trên Linux / WSL:
 ```bash
-# Tiến thẳng 0.5 m/s
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.5}, angular: {z: 0.0}}" --once
+# Biên dịch toàn bộ firmware
+make -j$(nproc)
 
-# Quay tại chỗ
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0}, angular: {z: 1.0}}" --once
-
-# Dừng (disable motor)
-ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0}, angular: {z: 0.0}}" --once
+# Xóa file build cũ
+make clean
 ```
 
-Motor **enable** khi `linear.x != 0` hoặc `angular.z != 0`. Motor **disable** khi cả hai bằng 0.
+### Trên Windows PowerShell (sử dụng Toolchain STM32CubeIDE):
+```powershell
+$env:PATH = "C:\ST\STM32CubeIDE_1.16.1\STM32CubeIDE\plugins\com.st.stm32cube.ide.mcu.externaltools.gnu-tools-for-stm32.12.3.rel1.win32_1.0.200.202406191623\tools\bin;C:\ST\STM32CubeIDE_1.16.1\STM32CubeIDE\plugins\com.st.stm32cube.ide.mcu.externaltools.make.win32_2.1.300.202402091052\tools\bin;" + $env:PATH
+make -j4
+```
+
+File nạp tạo ra tại thư mục `build/`:
+- `build/microros_H7.bin` (dùng để nạp qua STM32CubeProgrammer hoặc ST-Link Utility).
+- `build/microros_H7.elf` (dùng để Debug bằng GDB / OpenOCD).
 
 ---
 
-## Dùng từ máy ROS 2 khác trên cùng mạng LAN
+## 🔍 Hướng dẫn Đọc Log Gỡ lỗi (Debug UART7 @ PE8)
 
-Không cần cài thêm gì. ROS 2 dùng DDS multicast tự động discover.
+Khi kết nối chân **PE8** qua mạch USB-TTL và mở phần mềm Serial Monitor (PuTTY / MobaXterm @ **115200 bps**), bạn sẽ thấy các thông báo thời gian thực:
 
-**Yêu cầu:**
-- Cùng `ROS_DOMAIN_ID` (mặc định = 0)
-- Cùng mạng LAN, firewall cho phép UDP multicast
-- Cùng phiên bản ROS 2 Jazzy
+```text
+========================================
+[BOOT] STM32H723 Robot Controller Starting...
+[BOOT] Debug Serial: UART7 @ 115200 bps (PE8 TX)
+[BOOT] BMI088 IMU: OK
+[BOOT] Launching FreeRTOS Kernel...
+========================================
 
-**Máy PC chủ (chạy agent):**
-```bash
-export ROS_DOMAIN_ID=0        # hoặc thêm vào ~/.bashrc
-source ~/microros_ws/install/setup.bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200
+[ROS] StartDefaultTask running. Init USB custom transport...
+[MOTOR] Motor_task started.
+[MOTOR] Enabling FDCAN1 & FDCAN3 motors...
+[MOTOR] FDCAN1 & FDCAN3 Filters Configured.
+[INS] INS_task started (Mahony AHRS filter active).
+[OBSERVE] Task started. Waiting for INS convergence...
+[OBSERVE] INS Converged! Velocity Observer Kalman Filter Active.
+
+[ROS] Waiting for micro-ROS Agent connection over USB CDC...
+[ROS] micro-ROS Agent CONNECTED! Initializing ROS 2 entities...
+[ROS] Node [stm32h7_node] Ready | Pub: [/motor_fb] | Sub: [/cmd_vel, /motor_enable]
+
+[CMD_VEL] vx=0.30 m/s, wz=0.00 rad/s
+[MOTOR_EN] State=1
 ```
 
-
-
-**Máy khác (cùng LAN):**
-```bash
-export ROS_DOMAIN_ID=0
-source /opt/ros/jazzy/setup.bash
-
-ros2 topic list               # phải thấy /imu, /euler, /motor_fb, /cmd_vel
-ros2 topic echo /euler
-```
-
-Nếu không thấy topic, thử tắt tường lửa hoặc thêm rule cho UDP port 7400–7500:
-```bash
-sudo ufw allow 7400:7500/udp
-```
-
----
-
-## Build firmware (nếu cần sửa code)
-
-```bash
-wsl -d Ubuntu-24.04
-cd /mnt/p/Prj_STM32/ros_h7
-make -j$(nproc) 2>&1 | tail -5
-```
-
-Flash bằng STM32CubeProgrammer hoặc OpenOCD qua ST-Link.
-
----
-
-## Troubleshooting
-
-| Vấn đề | Nguyên nhân | Giải pháp |
-|---|---|---|
-| Agent không kết nối được | Sai cổng serial | Kiểm tra `ls /dev/ttyUSB*`, thử `ttyUSB1` |
-| `/dev/ttyUSB0` không xuất hiện trong WSL | Chưa attach USB | Chạy `usbipd attach --wsl --busid X-X` từ Windows |
-| `/euler` nhảy loạn trong 3s đầu | Bình thường, filter chưa hội tụ | Chờ `ins_flag=1` sau ~3 giây |
-| Máy khác không thấy topic | DDS không discover | Kiểm tra cùng `ROS_DOMAIN_ID`, mở UDP firewall |
-| Motor không chạy | `cmd_vel` enable=0 | Gửi `linear.x != 0` hoặc `angular.z != 0` |
-| `/odom` position drift | Trượt bánh hoặc sai WHEEL_RADIUS | Chỉnh `WHEEL_RADIUS`/`WHEEL_BASE` trong [User/APP/motor_task.h](User/APP/motor_task.h) |
-| `v_filter` = 0 mãi | Observe_task chưa nhận feedback CAN | Kiểm tra FDCAN1/2 wiring và ID motor |
-
----
-
-## Thông số cơ học (cần đo thực tế)
-
-Các hằng số trong [User/APP/motor_task.h](User/APP/motor_task.h):
-
-| Hằng số | Giá trị mặc định | Ý nghĩa |
-|---|---|---|
-| `WHEEL_RADIUS` | 0.05 m | Bán kính bánh xe |
-| `WHEEL_BASE` | 0.30 m | Khoảng cách tâm 2 bánh |
-| `MOTOR_LEFT_SIGN` | +1.0 | Chiều quay motor ID 1 |
-| `MOTOR_RIGHT_SIGN` | -1.0 | Chiều quay motor ID 2 (đối xứng) |
-| `MOTOR_VEL_KD` | 1.0 | Hệ số Kd MIT velocity mode |
-
-cd /mnt/p/Prj_STM32/ros_h7
-source /opt/ros/jazzy/setup.bash
-python3 teleop/teleop_key.py
-
-
+Nếu hệ thống gặp lỗi phần cứng hoặc bộ nhớ, chip sẽ tự động in cảnh báo:
+- `[CRASH] *** HardFault_Handler triggered! ***` -> Lỗi truy cập con trỏ NULL / sai vùng nhớ.
+- `[FATAL] Stack Overflow in Task: [defaultTask]!` -> Tràn bộ nhớ Stack của task tương ứng.
+- `[FATAL] FreeRTOS Heap Allocation Failed!` -> Hết bộ nhớ RAM Heap.

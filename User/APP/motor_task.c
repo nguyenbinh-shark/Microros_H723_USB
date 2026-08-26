@@ -22,6 +22,7 @@
 #include "cmsis_os.h"
 #include "robot_config.h"
 #include "kinematics.h"
+#include "bsp_sbus.h"
 #include <stdio.h>
 
 /* Motor CAN IDs and master ID */
@@ -58,9 +59,9 @@ void motor_enable_set(uint8_t enable)
     }
     else
     {
-        printf("[MOTOR] Disabling motors (Brake/Idle)...\r\n");
-        rs_ext_disable(&hfdcan1, 1U, MASTER_ID, 0);
-        rs_ext_disable(&hfdcan3, 1U, MASTER_ID, 0);
+        printf("[MOTOR] Disabling FDCAN1 & FDCAN3 motors...\r\n");
+        rs_ext_disable(&hfdcan1, 1U, MASTER_ID, 0);     /* Left motor  */
+        rs_ext_disable(&hfdcan3, 1U, MASTER_ID, 0);     /* Right motor */
     }
 }
 
@@ -92,17 +93,42 @@ void Motor_task(void)
 
     for (;;)
     {
-        /* Nếu hệ thống bị Disable từ ROS: không gửi lệnh quay, cho motor nghỉ */
-        if (!g_system_enabled)
+        float effective_vx = g_cmd_velocity;
+        float effective_wz = g_cmd_yaw_rate;
+        uint8_t effective_enable = g_system_enabled;
+
+        /* ── SBUS Remote Controller Arbitration ─────────────────── */
+        if (sbus_is_online())
         {
+            RC_ControlMode_t rc_mode = sbus_get_control_mode();
+            if (rc_mode == RC_MODE_MANUAL_RC)
+            {
+                /* Manual Teleop: Max 1.0 m/s linear, 2.5 rad/s turn */
+                sbus_get_motion_cmd(1.0f, 2.5f, &effective_vx, &effective_wz);
+                effective_enable = 1U;
+            }
+            else if (rc_mode == RC_MODE_EMERGENCY_STOP)
+            {
+                effective_vx = 0.0f;
+                effective_wz = 0.0f;
+                effective_enable = 0U;
+            }
+            /* If RC_MODE_AUTO_ROS2: keeps ROS2 /cmd_vel commands */
+        }
+
+        /* Nếu hệ thống bị Disable: dừng phanh motor */
+        if (!effective_enable)
+        {
+            rs_ext_control_cmd(&hfdcan1, 1U, 0.0f, 0.0f, 0.0f, 0.0f, VEL_IDLE_KD);
+            rs_ext_control_cmd(&hfdcan3, 1U, 0.0f, 0.0f, 0.0f, 0.0f, VEL_IDLE_KD);
             osDelay(10);
             continue;
         }
 
         RobotCmd_t cmd;
-        cmd.velocity = g_cmd_velocity;   /* m/s */
-        cmd.yaw_rate = g_cmd_yaw_rate;   /* rad/s */
-        cmd.enable   = g_system_enabled;
+        cmd.velocity = effective_vx;   /* m/s */
+        cmd.yaw_rate = effective_wz;   /* rad/s */
+        cmd.enable   = effective_enable;
 
         float target_left_vel = 0.0f;    /* rad/s */
         float target_right_vel = 0.0f;   /* rad/s */

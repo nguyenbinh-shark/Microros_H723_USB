@@ -26,7 +26,7 @@ static uint8_t line_coding[7] = {0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08};
 
 // --- micro-ROS Transports ---
 #define USB_BUFFER_SIZE 2048
-#define WRITE_TIMEOUT_MS 100U
+#define WRITE_TIMEOUT_MS 20U
 
 volatile uint8_t storage_buffer[USB_BUFFER_SIZE] = {0};
 volatile size_t it_head = 0;
@@ -159,5 +159,17 @@ size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf,
 
     return readed;
 }
+
+size_t cubemx_transport_get_pending(void)
+{
+    size_t head = it_head;
+    size_t tail = it_tail;
+    if (tail >= head) {
+        return tail - head;
+    } else {
+        return USB_BUFFER_SIZE - head + tail;
+    }
+}
+
 
 #endif

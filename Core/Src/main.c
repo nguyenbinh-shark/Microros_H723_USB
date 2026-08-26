@@ -33,6 +33,7 @@
 #include "bsp_dwt.h"
 #include "BMI088driver.h"
 #include "can_bsp.h"
+#include "bsp_sbus.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -113,6 +114,7 @@ int main(void)
   MX_DMA_Init();
   MX_UART7_Init();
   MX_FDCAN1_Init();
+  MX_SPI1_Init();
   MX_SPI2_Init();
   MX_TIM3_Init();
   MX_TIM12_Init();
@@ -123,6 +125,7 @@ int main(void)
   printf("[BOOT] Debug Serial: UART7 @ 115200 bps (PE8 TX)\r\n");
 
   DWT_Init(550);          /* STM32H723 @ 550 MHz, before RTOS */
+  sbus_bsp_init();        /* SBUS / DBUS Receiver on UART5 (PD2) */
   uint8_t imu_ret = BMI088_init(&hspi2, 0); /* Try init BMI088, do not block MCU if IMU missing */
   printf("[BOOT] BMI088 IMU: %s\r\n", (imu_ret == 0) ? "OK" : "FAILED / NOT FOUND");
   printf("[BOOT] Launching FreeRTOS Kernel...\r\n");

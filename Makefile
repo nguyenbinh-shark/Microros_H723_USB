@@ -83,12 +83,18 @@ Core/Src/tim.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_fdcan.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi.c \
 Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_spi_ex.c \
+Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_adc.c \
+Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_adc_ex.c \
 User/Bsp/can_bsp.c \
 User/Bsp/bsp_dwt.c \
 User/Bsp/bsp_PWM.c \
+User/Bsp/bsp_navkey.c \
+User/Bsp/bsp_sbus.c \
 User/APP/motor_task.c \
 User/APP/INS_task.c \
 User/APP/observe_task.c \
+User/APP/lcd_task.c \
+User/Devices/LCD/lcd.c \
 User/Devices/DRV_Motor/robstride_drv.c \
 User/Devices/BMI088/BMI088driver.c \
 User/Devices/BMI088/BMI088Middleware.c \
@@ -191,6 +197,7 @@ C_INCLUDES =  \
 -IUser/APP \
 -IUser/Devices/DRV_Motor \
 -IUser/Devices/BMI088 \
+-IUser/Devices/LCD \
 -IUser/Config \
 -IUser/Algorithm/EKF \
 -IUser/Algorithm/kalman \
