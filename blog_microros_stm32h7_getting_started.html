@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bắt đầu với micro-ROS trên STM32H723 — Vì sao & Cách dùng (cho người mới)</title>
+<style>
+:root {
+  --bg:#f0f4f8; --surface:#fff; --border:#e2e8f0;
+  --primary:#2563eb; --accent:#7c3aed; --success:#059669;
+  --warn:#d97706; --danger:#dc2626;
+  --text:#1e293b; --muted:#64748b; --heading:#0f172a;
+  --code-bg:#0d1117; --code-text:#c9d1d9;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.8;font-size:16px}
+
+/* HEADER */
+header{background:linear-gradient(135deg,#0d1117 0%,#0f2d6e 55%,#312e81 100%);color:#fff;padding:72px 40px;text-align:center}
+.chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin-bottom:24px}
+.chips span{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:20px;padding:4px 14px;font-size:12px;letter-spacing:.04em}
+header h1{font-size:clamp(22px,4vw,44px);font-weight:900;line-height:1.15;margin-bottom:16px}
+header p{font-size:18px;opacity:.82;max-width:680px;margin:0 auto}
+header .sub{margin-top:14px;font-size:13px;opacity:.7}
+
+/* LAYOUT */
+.wrap{max-width:1180px;margin:0 auto;display:flex;gap:36px;padding:40px 20px;align-items:flex-start}
+
+/* TOC */
+nav.toc{width:240px;flex-shrink:0;position:sticky;top:20px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;max-height:calc(100vh - 40px);overflow-y:auto}
+nav.toc h3{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:14px}
+nav.toc ol{list-style:none;counter-reset:t}
+nav.toc li{counter-increment:t;margin:1px 0}
+nav.toc a{display:flex;align-items:baseline;gap:7px;padding:6px 8px;border-radius:7px;text-decoration:none;color:var(--muted);font-size:13px;transition:.15s}
+nav.toc a::before{content:counter(t);color:var(--primary);font-weight:700;font-size:11px;min-width:16px}
+nav.toc a:hover{background:#eff6ff;color:var(--primary)}
+
+/* CONTENT */
+main{flex:1;min-width:0}
+
+/* SECTION */
+section{background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:44px;margin-bottom:28px}
+h2{font-size:24px;font-weight:900;color:var(--heading);margin-bottom:22px;padding-bottom:14px;border-bottom:2px solid var(--border);display:flex;align-items:center;gap:12px}
+.ico{width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0}
+h3{font-size:17px;font-weight:800;color:var(--heading);margin:30px 0 12px}
+h4{font-size:14px;font-weight:700;margin:20px 0 8px;color:var(--primary)}
+p{margin-bottom:14px}
+ul,ol{padding-left:22px;margin-bottom:14px}
+li{margin-bottom:7px}
+strong{color:var(--heading)}
+
+/* CODE */
+pre{background:var(--code-bg);border-radius:12px;padding:22px 26px;overflow-x:auto;margin:18px 0;border:1px solid #21262d;position:relative}
+pre code{font-family:'Cascadia Code','Fira Code',Consolas,monospace;font-size:13px;line-height:1.7;color:var(--code-text)}
+code{font-family:'Cascadia Code','Fira Code',Consolas,monospace;font-size:13px;background:#f1f5f9;color:#a21caf;padding:2px 6px;border-radius:4px}
+pre code{background:none;color:inherit;padding:0}
+.lb{position:absolute;top:8px;right:14px;font-size:10px;color:#484f58;letter-spacing:.06em;text-transform:uppercase}
+
+/* SYNTAX */
+.kw{color:#ff7b72}.fn{color:#79c0ff}.cm{color:#484f58;font-style:italic}
+.str{color:#a5d6ff}.num{color:#ffa657}.tp{color:#d2a8ff}.pp{color:#f78166}
+.ok{color:#3fb950}.dim{color:#6e7681}
+
+/* CALLOUT */
+.note{border-radius:12px;padding:16px 20px;margin:18px 0;display:flex;gap:14px;align-items:flex-start}
+.note-i{font-size:20px;flex-shrink:0;margin-top:2px}
+.note-b{flex:1}.note-b strong{display:block;margin-bottom:4px;font-size:14px}
+.note-b p{margin:0;font-size:14px;line-height:1.65}
+.note.info{background:#eff6ff;border-left:4px solid #3b82f6}
+.note.warn{background:#fffbeb;border-left:4px solid #f59e0b}
+.note.ok  {background:#f0fdf4;border-left:4px solid #22c55e}
+.note.bad {background:#fef2f2;border-left:4px solid #ef4444}
+
+/* TABLE */
+table{width:100%;border-collapse:collapse;margin:18px 0;font-size:14px}
+th{background:#f1f5f9;color:var(--heading);font-weight:700;text-align:left;padding:10px 14px;border:1px solid var(--border)}
+td{padding:9px 14px;border:1px solid var(--border);vertical-align:top}
+tr:nth-child(even) td{background:#f8fafc}
+
+/* DIAGRAM */
+.dia{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:20px 24px;margin:18px 0;overflow-x:auto}
+.dia pre{background:none;border:none;padding:0;margin:0}
+.dia pre code{color:var(--text);font-size:13px;line-height:1.55}
+
+/* STEP LIST */
+.steps{list-style:none;padding:0;counter-reset:s}
+.steps li{counter-increment:s;display:flex;gap:16px;margin-bottom:22px;align-items:flex-start}
+.steps li::before{content:counter(s);width:32px;height:32px;background:var(--primary);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;margin-top:2px}
+.steps li>div{flex:1}
+
+/* BADGE */
+.badge{display:inline-block;padding:2px 10px;border-radius:20px;font-size:11px;font-weight:700;margin:2px}
+.badge.blue{background:#dbeafe;color:#1e40af}
+.badge.green{background:#dcfce7;color:#166534}
+.badge.red{background:#fee2e2;color:#991b1b}
+.badge.orange{background:#ffedd5;color:#9a3412}
+.badge.purple{background:#ede9fe;color:#5b21b6}
+.badge.gray{background:#f1f5f9;color:#475569}
+
+/* 2-col grid */
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:16px 0}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:16px 0}
+.card{background:#f8fafc;border:1px solid var(--border);border-radius:10px;padding:18px}
+.card h4{margin-top:0}
+.card.bad{border-color:#fecaca;background:#fff5f5}
+.card.good{border-color:#bbf7d0;background:#f7fff7}
+
+/* IMAGE PLACEHOLDER (.shot) */
+.shot{border:2px dashed #94a3b8;border-radius:12px;padding:16px 18px;margin:18px 0;background:repeating-linear-gradient(45deg,#f8fafc,#f8fafc 10px,#f1f5f9 10px,#f1f5f9 20px);display:flex;gap:14px;align-items:flex-start}
+.shot-ico{font-size:24px;flex-shrink:0}
+.shot-b{flex:1}
+.shot-b .cap{font-size:14px;color:var(--heading);font-weight:700;display:block;margin-bottom:3px}
+.shot-b .hint{font-size:13px;color:var(--muted);line-height:1.6}
+.shot-b .tag{display:inline-block;margin-top:6px;font-size:11px;font-weight:700;background:#e2e8f0;color:#334155;border-radius:6px;padding:2px 8px}
+
+/* FOOTER */
+footer{text-align:center;padding:48px 20px;color:var(--muted);font-size:14px;border-top:1px solid var(--border)}
+
+@media(max-width:860px){nav.toc{display:none}.wrap{padding:16px}.grid2,.grid3{grid-template-columns:1fr}section{padding:24px 18px}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="chips">
+    <span>STM32H723VGT6 @ 550 MHz</span><span>FreeRTOS</span>
+    <span>micro-ROS Jazzy</span><span>BMI088</span><span>UART / CH340</span><span>ROS 2</span>
+  </div>
+  <h1>Bắt đầu với micro-ROS trên STM32H723<br>Vì sao &amp; Cách dùng (cho người mới)</h1>
+  <p>Hiểu micro-ROS là gì, vì sao nên dùng thay vì gửi serial/rosserial tay chân, và cách chạy node <code>stm32h7_node</code> để publish IMU &amp; điều khiển robot qua ROS 2 — từ con số 0.</p>
+  <p class="sub">Bài kèm theo (nâng cao): <em>blog_microros_stm32h7.html — Kỹ thuật thực chiến</em></p>
+</header>
+
+<div class="wrap">
+
+<nav class="toc">
+  <h3>Mục lục</h3>
+  <ol>
+    <li><a href="#s1">micro-ROS là gì?</a></li>
+    <li><a href="#s2">Vì sao chọn micro-ROS?</a></li>
+    <li><a href="#s3">Kiến trúc 3 lớp</a></li>
+    <li><a href="#s4">Phần cứng cần</a></li>
+    <li><a href="#s5">Bước 1 — Cài Agent</a></li>
+    <li><a href="#s6">Bước 2 — Chạy Agent</a></li>
+    <li><a href="#s7">Bước 3 — Build &amp; flash</a></li>
+    <li><a href="#s8">Bước 4 — Kiểm tra ROS 2</a></li>
+    <li><a href="#s9">Lái robot (teleop)</a></li>
+    <li><a href="#s10">Đọc firmware</a></li>
+    <li><a href="#s11">Lỗi thường gặp</a></li>
+    <li><a href="#s12">Tóm tắt</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<!-- ═══ 1. micro-ROS LÀ GÌ ═══════════════════════════════════════ -->
+<section id="s1">
+  <h2><span class="ico" style="background:#dbeafe">💡</span>1. micro-ROS là gì &amp; tại sao quan trọng?</h2>
+
+  <p>Hãy tưởng tượng bạn có một board STM32 gắn cảm biến IMU và motor. Bạn muốn đưa dữ liệu cảm biến vào <strong>ROS 2</strong> (hệ điều hành robot) để dùng <code>rviz</code> trực quan, ghi <code>ros2 bag</code>, hay chạy <code>Nav2</code> tự hành. Câu hỏi là: <em>làm sao board "nói chuyện" được với ROS 2?</em></p>
+
+  <p><strong>micro-ROS</strong> chính là câu trả lời. Nó là một phiên bản ROS 2 <em>thu nhỏ</em> chạy được ngay trên vi điều khiển (MCU). Khi cài micro-ROS lên STM32, board của bạn tự động trở thành một <strong>node ROS 2 thật</strong> —-publish/subscribe đúng các kiểu message chuẩn như <code>sensor_msgs/Imu</code>, <code>geometry_msgs/Twist</code>... — mà không cần phải "bịa" ra giao thức riêng.</p>
+
+  <div class="dia"><pre><code>
+   "CÁCH CŨ" — tự bịa giao thức qua UART                   micro-ROS — ROS 2 native
+
+   ┌─────────┐  UART    ┌──────────────┐                  ┌─────────┐  UART   ┌─────────┐  DDS   ┌─────────┐
+   │  STM32  │─────────▶│  Script PC   │                  │  STM32  │────────▶│  Agent  │◀──────▶│  ROS 2  │
+   │ print() │ "12.3\n" │  parse chuỗi │                  │rcl_pub()│  XRCE   │ (bridge)│        │  network│
+   └─────────┘          └──────────────┘                  └─────────┘         └─────────┘        └─────────┘
+        ❌ tự nghĩ format, đổi thông điệp = sửa cả 2 nơi         ✅ đúng sensor_msgs/Imu, "ros2 echo" chạy luôn
+  </code></pre></div>
+
+  <div class="note info">
+    <span class="note-i">🔑</span>
+    <div class="note-b">
+      <strong>Ý chính trong 1 câu</strong>
+      <p>micro-ROS biến MCU thành một node ROS 2 chính hiệu, dùng đúng message chuẩn. Bạn không phải tự thiết kế giao tiếp — ROS 2 lo phần đó.</p>
+    </div>
+  </div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P1: Board STM32H723 đặt cạnh máy tính</span>
+      <span class="hint">Chụp board thật (có dây USB-serial cắm sẵn) bên cạnh màn hình PC đang mở một terminal ROS 2 (ví dụ cửa sổ <code>ros2 topic echo /imu</code> đang cuộn số). Hậu cảnh gọn, đủ sáng. Có thể ghép chú thích mũi tên: "MCU = node ROS 2".</span>
+      <span class="tag">Vị trí: mục 1</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 2. VÌ SAO CHỌN micro-ROS ═════════════════════════════════ -->
+<section id="s2">
+  <h2><span class="ico" style="background:#ede9fe">⚖️</span>2. Vì sao chọn micro-ROS? (so sánh các phương án)</h2>
+
+  <p>Đưa MCU vào ROS 2 không chỉ có một cách. Bảng dưới so sánh 3 hướng phổ biến để bạn thấy micro-ROS thắng ở đâu:</p>
+
+  <div class="grid3">
+    <div class="card">
+      <h4>① UART/CAN thô</h4>
+      <p style="font-size:13px">MCU <code>printf</code> chuỗi, PC tự <code>parse</code>.</p>
+      <span class="badge gray">đơn giản ban đầu</span>
+      <span class="badge red">không chuẩn</span>
+      <p style="font-size:13px;margin-top:8px">Đổi message → sửa firmware <em>và</em> script. Không có QoS, service, timestamp...</p>
+    </div>
+    <div class="card">
+      <h4>② rosserial</h4>
+      <p style="font-size:13px">Thư viện cũ, phổ biến thời ROS 1.</p>
+      <span class="badge orange">ROS 1 gốc</span>
+      <span class="badge red">ít duy trì</span>
+      <p style="font-size:13px;margin-top:8px">Cổng sang ROS 2 sơ sài, hiệu năng và độ tin cậy kém hơn micro-ROS.</p>
+    </div>
+    <div class="card good">
+      <h4>③ micro-ROS ✅</h4>
+      <p style="font-size:13px">Client ROS 2 native cho MCU.</p>
+      <span class="badge green">ROS 2 chuẩn</span>
+      <span class="badge blue">QoS / service</span>
+      <p style="font-size:13px;margin-top:8px">Dùng DDS-XRCE, <code>ros2</code> tools chạy luôn, hỗ trợ nhiều transport &amp; MCU.</p>
+    </div>
+  </div>
+
+  <h3>Bí mật: DDS-XRCE &amp; "Agent bridge"</h3>
+  <p>ROS 2 giao tiếp bằng <strong>DDS</strong> — một giao thức khá "nặng" cho MCU bé nhỏ. micro-ROS dùng một biến thể nhẹ hơn tên <strong>XRCE</strong> (eXtremely Resource-Constrained Environment). MCU chỉ gửi/nhận các thông điệp nhỏ; phần "nặng" của DDS được một chương trình trên PC tên <strong>Agent</strong> gánh hộ. Nhờ vậy MCU vừa được "ROS 2 thật", vừa không bị quá tải.</p>
+
+  <div class="note warn">
+    <span class="note-i">🤝</span>
+    <div class="note-b">
+      <strong>Đổi lại (thỏa hiệp)</strong>
+      <p>Phải chạy Agent trên một máy PC/Pi; phải build trước thư viện tĩnh micro-ROS; và có giới hạn số node/publisher cấu hình sẵn cho MCU. Đó là cái giá hợp lý để đổi lấy "ROS 2 native".</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 3. KIẾN TRÚC 3 LỚP ═══════════════════════════════════════ -->
+<section id="s3">
+  <h2><span class="ico" style="background:#dcfce7">🏗️</span>3. Kiến trúc 3 lớp — hiểu trong 1 phút</h2>
+
+  <p>Toàn bộ hệ thống chỉ có <strong>3 lớp</strong> nối với nhau. Hiểu được ảnh dưới là bạn đã nắm 80% bài toán:</p>
+
+  <div class="dia"><pre><code>
+   ┌───────────────────────────────┐        ┌──────────────────────────┐        ┌────────────────────┐
+   │ LỚP 1 — CLIENT (trên MCU)     │  UART  │ LỚP 2 — AGENT (trên PC)  │  DDS   │ LỚP 3 — ROS 2 /    │
+   │ STM32H723 + FreeRTOS          │◀──────▶│  micro_ros_agent         │◀──────▶│ DDS network        │
+   │                               │ 115200 │                          │  UDP   │                    │
+   │ • node "stm32h7_node"         │ CH340  │ • dịch XRCE ↔ DDS        │        │ • /imu /odom ...    │
+   │ • publish /imu /odom ...      │        │ • chạy trong WSL2 / Pi    │        │ • ros2 topic echo   │
+   │ • subscribe /cmd_vel          │        │                          │        │ • rviz · Nav2 · bag │
+   └───────────────────────────────┘        └──────────────────────────┘        └────────────────────┘
+  </code></pre></div>
+
+  <h3>Ví dụ một luồng dữ liệu (từ cảm biến đến màn hình)</h3>
+  <div class="dia"><pre><code>
+   BMI088 ──▶ Mahony (lọc góc) ──▶ quaternion ──▶ rcl_publish("/imu") ──▶ Agent ──▶ DDS ──▶ ros2 topic echo /imu
+  </code></pre></div>
+
+  <ul>
+    <li><strong>Lớp 1 (Client):</strong> chính là firmware trên STM32 (code trong <code>freertos.c</code>). Nó tạo node, publish/subscribe.</li>
+    <li><strong>Lớp 2 (Agent):</strong> một tiến trình bạn chạy trên PC, làm cầu nối serial ↔ DDS.</li>
+    <li><strong>Lớp 3 (ROS 2):</strong> mạng ROS 2 tiêu chuẩn — mọi lệnh <code>ros2</code>, <code>rviz</code>, <code>Nav2</code> đều ở đây.</li>
+  </ul>
+  <p><strong>Transport</strong> (đường truyền) trong project này là <strong>UART ở 115200 bps qua mạch CH340 USB-serial</strong>, ra cổng <code>/dev/ttyUSB0</code> trên PC.</p>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P2: Dây cáp USB-serial CH340</span>
+      <span class="hint">Chụp cận cảnh đầu cáp CH340 cắm vào board (4 dây TX/RX/GND/VCC) và đầu USB cắm vào PC. Nhấn mạnh đây chính là "cây cầu" giữa Lớp 1 và Lớp 2.</span>
+      <span class="tag">Vị trí: mục 3</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 4. PHẦN CỨNG ═════════════════════════════════════════════ -->
+<section id="s4">
+  <h2><span class="ico" style="background:#ffedd5">🔧</span>4. Phần cứng bạn cần</h2>
+
+  <table>
+    <tr><th>Thành phần</th><th>Thông số</th><th>Vai trò</th></tr>
+    <tr><td><strong>STM32H723VGT6</strong></td><td>Cortex-M7 @ 550 MHz · 1 MB Flash · 560 KB RAM</td><td>MCU chính, chạy FreeRTOS + micro-ROS Client</td></tr>
+    <tr><td><strong>BMI088</strong></td><td>Gia tốc ±6 g + Gyro ±2000 °/s · nối SPI2</td><td>IMU — đo gia tốc &amp; vận tốc góc</td></tr>
+    <tr><td><strong>USB-UART CH340</strong></td><td>115200 bps</td><td>Cầu nối MCU ↔ PC (transport serial)</td></tr>
+    <tr><td><strong>2× CyberGear</strong> <span class="badge gray">tuỳ chọn</span></td><td>BLDC có encoder · giao tiếp FDCAN (ID 1 trái, ID 2 phải)</td><td>Bánh xe robot</td></tr>
+  </table>
+
+  <div class="note ok">
+    <span class="note-i">✅</span>
+    <div class="note-b">
+      <strong>Chỉ muốn học micro-ROS?</strong>
+      <p>Bạn có thể <strong>bỏ qua phần motor</strong>. Board vẫn publish <code>/imu</code> và <code>/euler</code> bình thường (chỉ <code>/motor_fb</code> và <code>/odom</code> sẽ bằng 0 vì không có phản hồi bánh xe). Đủ để luyện micro-ROS từ đầu.</p>
+    </div>
+  </div>
+
+  <h3>Sơ đồ nối dây tối thiểu</h3>
+  <div class="dia"><pre><code>
+   BMI088 ──SPI2──┐                                   ┌── FDCAN1 ──▶ CyberGear ID1 (trái)   ◀── tuỳ chọn
+                  │   ┌──────────────────┐           │
+                  ├──▶│   STM32H723VGT6  │── UART7 ──┤
+                      │   (TX/RX)        │           ├── FDCAN2 ──▶ CyberGear ID2 (phải)  ◀── tuỳ chọn
+                      └────────┬─────────┘
+                               │ USB-UART CH340 @115200
+                               ▼
+                          /dev/ttyUSB0 ──▶ PC (WSL2) chạy micro-ROS Agent
+  </code></pre></div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P3: Board thật + ghi chú các chân kết nối</span>
+      <span class="hint">Chụp board STM32H723 thật. Dán nhãn/bôi màu hoặc ghép chú thích mũi tên vào: chân UART7 (TX/RX) nối sang CH340, vùng connector BMI088 (SPI2), và (nếu có) đầu nối FDCAN tới CyberGear. Nếu có ảnh pinout từ CubeMX (.ioc) thì ghép bên cạnh càng tốt.</span>
+      <span class="tag">Vị trí: mục 4</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 5. BƯỚC 1 — CÀI AGENT ════════════════════════════════════ -->
+<section id="s5">
+  <h2><span class="ico" style="background:#dbeafe">🟦</span>5. Bước 1 — Cài Agent micro-ROS (chỉ làm 1 lần)</h2>
+
+  <p><strong>Agent</strong> là chương trình chạy trên PC làm cầu nối (Lớp 2 ở mục 3). Bạn cài nó <em>một lần duy nhất</em> từ kho <code>micro_ros_setup</code>.</p>
+
+  <p><strong>Yêu cầu:</strong> Ubuntu 24.04 đã cài ROS 2 Jazzy. Nếu dùng Windows, chạy Ubuntu trong <strong>WSL2</strong> (cách forward USB xem mục 6). Trên Raspberry Pi/Linux native thì làm y hệt, chỉ khác là không cần forward USB.</p>
+
+  <pre><span class="lb">bash · terminal Ubuntu/WSL2</span><code><span class="cm"># Tạo workspace và lấy bộ cài micro-ROS (nhánh Jazzy)</span>
+mkdir -p ~/microros_ws/src &amp;&amp; cd ~/microros_ws
+git clone -b jazzy https://github.com/micro-ROS/micro_ros_setup.git src/micro_ros_setup
+
+<span class="cm"># Cài dependencies</span>
+sudo apt update &amp;&amp; rosdep update
+rosdep install --from-paths src --ignore-src -y
+
+<span class="cm"># Build workspace micro_ros_setup</span>
+colcon build
+source install/local_setup.bash
+
+<span class="cm"># Tạo và build Agent (tải mã nguồn Agent + biên dịch)</span>
+ros2 run micro_ros_setup create_agent_ws.sh
+ros2 run micro_ros_setup build_agent.sh
+source install/local_setup.bash</code></pre>
+
+  <div class="note info">
+    <span class="note-i">⏳</span>
+    <div class="note-b">
+      <strong>Kiên nhẫn nhé</strong>
+      <p>Lệnh <code>build_agent.sh</code> tải và biên dịch cả một stack DDS nên <strong>có thể mất nhiều phút</strong>. Đợi tới khi xong là bình thường, không phải treo máy.</p>
+    </div>
+  </div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P4: Screenshot terminal khi build Agent xong</span>
+      <span class="hint">Chụp màn hình terminal WSL2/Ubuntu hiện các dòng <code>Finished</code> / <code>Summary package</code> của colcon sau <code>build_agent.sh</code>. Có thể khoanh đỏ dòng hoàn tất để người đọc biết "đây là dấu hiệu cài xong".</span>
+      <span class="tag">Vị trí: mục 5</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 6. BƯỚC 2 — CHẠY AGENT ═══════════════════════════════════ -->
+<section id="s6">
+  <h2><span class="ico" style="background:#dcfce7">🟩</span>6. Bước 2 — Kết nối &amp; chạy Agent (mỗi lần dùng)</h2>
+
+  <p>Đây là chuỗi thao tác bạn làm <strong>mỗi lần</strong> muốn dùng board. Làm đúng thứ tự:</p>
+
+  <ol class="steps">
+    <li><div>
+      <strong>Cắm cáp CH340</strong> từ board vào PC. Board tự khởi động (dùng offset hiệu chỉnh sẵn trong firmware, không cần giữ phẳng).
+    </div></li>
+    <li><div>
+      <strong>Trên Windows — forward USB vào WSL2</strong> (mở <em>PowerShell dạng Administrator</em>):
+      <pre><span class="lb">powershell · Admin</span><code>usbipd list                       <span class="cm"># tìm dòng CH340, ví dụ busid 1-2</span>
+usbipd attach --wsl --busid 1-2   <span class="cm"># đẩy USB đó vào WSL</span></code></pre>
+      <div class="note info"><span class="note-i">🐧</span><div class="note-b"><strong>Dùng Raspberry Pi / Linux native?</strong><p>Bỏ qua bước này — board đã hiện luôn ở <code>/dev/ttyUSB0</code>.</p></div></div>
+    </div></li>
+    <li><div>
+      <strong>Trong WSL2 — cấp quyền &amp; chạy Agent</strong> (terminal #1):
+      <pre><span class="lb">bash · WSL2 · terminal #1</span><code>sudo chmod 666 /dev/ttyUSB0
+source ~/microros_ws/install/setup.bash
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/ttyUSB0 -b 115200</code></pre>
+    </div></li>
+    <li><div>
+      <strong>Đợi dòng</strong> <code>[3/3] Session established!</code> xuất hiện —— rồi <strong>NHẤN NÚT RESET</strong> trên board STM32. (Firmware chủ động đồng bộ phiên lúc khởi động, nên cần reset sau khi Agent đã sẵn sàng.)
+    </div></li>
+  </ol>
+
+  <div class="note warn">
+    <span class="note-i">🔍</span>
+    <div class="note-b">
+      <strong>Không biết cổng nào? ttyUSB0 hay ttyACM0?</strong>
+      <p>Tùy loại cáp USB-serial mà board hiện <code>/dev/ttyUSB0</code> <em>hoặc</em> <code>/dev/ttyACM0</code>. Kiểm tra nhanh:</p>
+      <pre style="margin:8px 0 0"><code>ls /dev/ttyUSB* /dev/ttyACM*</code></pre>
+      <p>rồi thay cổng tương ứng vào lệnh Agent. Baud luôn là <code>115200</code>.</p>
+    </div>
+  </div>
+
+  <h3>Trình tự thao tác (tổng quan)</h3>
+  <div class="dia"><pre><code>
+  ① Cắm cáp ──▶ ② usbipd attach (Windows) ──▶ ③ chmod /dev/ttyUSB0 (WSL) ──▶ ④ source setup.bash
+                                                                         ──▶ ⑤ chạy Agent ──▶ ⑥ NHẤN RESET board
+  </code></pre></div>
+
+  <div class="grid2">
+    <div class="shot" style="margin:0">
+      <span class="shot-ico">📷</span>
+      <div class="shot-b">
+        <span class="cap">Ảnh chụp — P5: Agent đã kết nối</span>
+        <span class="hint">Screenshot terminal hiện dòng <code>[3/3] Session established!</code> cùng các log tạo participant/entity của Agent.</span>
+        <span class="tag">Vị trí: mục 6</span>
+      </div>
+    </div>
+    <div class="shot" style="margin:0">
+      <span class="shot-ico">📷</span>
+      <div class="shot-b">
+        <span class="cap">Ảnh chụp — P6: Nhấn RESET board</span>
+        <span class="hint">Ảnh tay ấn nút RESET trên board STM32 (hoặc ảnh nút RESET có mũi tên chỉ). Chú thích: "Reset sau khi Agent sẵn sàng".</span>
+        <span class="tag">Vị trí: mục 6</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 7. BƯỚC 3 — BUILD & FLASH ════════════════════════════════ -->
+<section id="s7">
+  <h2><span class="ico" style="background:#ffedd5">🟧</span>7. Bước 3 — Build &amp; flash firmware</h2>
+
+  <p><span class="badge green">Bỏ qua</span> nếu firmware <strong>đã được nạp sẵn</strong> (mua board/rời nhào đã nạp). Chỉ build lại khi bạn <em>sửa code</em>. Nếu cần build/flash:</p>
+
+  <pre><span class="lb">bash · WSL2</span><code>wsl -d Ubuntu-24.04
+cd /mnt/p/Prj_STM32/ros_h7
+make -j$(nproc)          <span class="cm"># tạo build/microros_H7.bin</span></code></pre>
+
+  <p>Sau đó nạp file <code>build/microros_H7.bin</code> (hoặc <code>.hex</code>) bằng <strong>STM32CubeProgrammer</strong> hoặc <strong>OpenOCD qua ST-Link</strong>.</p>
+
+  <div class="note bad">
+    <span class="note-i">⚠️</span>
+    <div class="note-b">
+      <strong>Lỗi người mới hay gặp: thiếu <code>libmicroros.a</code></strong>
+      <p>Thư viện tĩnh micro-ROS (<code>libmicroros.a</code>) <strong>bị gitignore</strong> và phải được <strong>build bằng Docker</strong> trước khi <code>make</code> chạy được (nằm trong <code>micro_ros_stm32cubemx_utils/</code>). Nếu bạn vừa <code>git clone</code> repo về mà build lỗi ngay lệnh đầu — đó là nguyên nhân. Theo hướng dẫn build thư viện trong <code>micro_ros_stm32cubemx_utils/</code> (script <code>build_firmware.sh</code> / Docker).</p>
+    </div>
+  </div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P7: STM32CubeProgrammer flash thành công</span>
+      <span class="hint">Screenshot cửa sổ CubeProgrammer hiện dòng <code>File download complete</code> / <code>Verifying</code> OK sau khi nạp <code>microros_H7.bin</code>. Hoặc screenshot OpenOCD log nạp xong.</span>
+      <span class="tag">Vị trí: mục 7</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 8. BƯỚC 4 — KIỂM TRA ROS 2 ═══════════════════════════════ -->
+<section id="s8">
+  <h2><span class="ico" style="background:#dbeafe">🟦</span>8. Bước 4 — Kiểm tra trên ROS 2</h2>
+
+  <p>Mở <strong>terminal #2</strong> (cũng đã chạy <code>source ~/microros_ws/install/setup.bash</code>) và thử các lệnh:</p>
+
+  <pre><span class="lb">bash · WSL2 · terminal #2</span><code>ros2 node list          <span class="cm"># phải thấy: /stm32h7_node</span>
+ros2 topic list         <span class="cm"># phải thấy: /imu /euler /motor_fb /odom /cmd_vel</span>
+ros2 topic echo /imu     <span class="cm"># quaternion + gyro + accel</span>
+ros2 topic echo /euler   <span class="cm"># roll/pitch/yaw (đơn vị độ)</span>
+ros2 topic hz /imu       <span class="cm"># tần số publish ≈ 50 Hz</span></code></pre>
+
+  <table>
+    <tr><th>Topic</th><th>Kiểu message</th><th>Hz</th><th>Nội dung</th></tr>
+    <tr><td><code>/imu</code></td><td>sensor_msgs/Imu</td><td>50</td><td>Quaternion · gyro (rad/s) · gia tốc (m/s²)</td></tr>
+    <tr><td><code>/euler</code></td><td>geometry_msgs/Vector3</td><td>50</td><td>Roll · Pitch · Yaw (<strong>độ</strong>)</td></tr>
+    <tr><td><code>/motor_fb</code></td><td>sensor_msgs/JointState</td><td>50</td><td>Vị trí (rad) · vận tốc (rad/s) motor ID 1</td></tr>
+    <tr><td><code>/odom</code></td><td>nav_msgs/Odometry</td><td>50</td><td>Pose (dead-reckoning) · twist (đã lọc Kalman)</td></tr>
+    <tr><td><code>/cmd_vel</code></td><td>geometry_msgs/Twist</td><td>—</td><td>lệnh điều khiển ← subscribe</td></tr>
+  </table>
+
+  <h3>Giá trị "bình thường" khi board đặt phẳng</h3>
+  <div class="grid2">
+    <div class="card">
+      <h4>/euler</h4>
+      <p style="font-size:13px">x ≈ 0°, y ≈ 0°, z = yaw tùy hướng.<br><em>Lưu ý:</em> nhảy loạn trong ~3 giây đầu (bộ lọc chưa hội tụ) — chờ <code>ins_flag = 1</code> rồi mới tin.</p>
+    </div>
+    <div class="card">
+      <h4>/imu</h4>
+      <p style="font-size:13px">angular_velocity: |x|,|y|,|z| &lt; 0.05 rad/s.<br>linear_acceleration: z ≈ <strong>9.81 m/s²</strong> (trọng lực).</p>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="shot" style="margin:0">
+      <span class="shot-ico">📷</span>
+      <div class="shot-b">
+        <span class="cap">Ảnh chụp — P8: <code>ros2 topic echo /euler</code> ổn định</span>
+        <span class="hint">Screenshot terminal hiện <code>x: ~0.0 y: ~0.0 z: ...</code> ổn định (sau 3 giây). Khoanh vùng giá trị "đã hội tụ".</span>
+        <span class="tag">Vị trí: mục 8</span>
+      </div>
+    </div>
+    <div class="shot" style="margin:0">
+      <span class="shot-ico">📷</span>
+      <div class="shot-b">
+        <span class="cap">Ảnh chụp — P9: <code>ros2 topic hz /imu</code></span>
+        <span class="hint">Screenshot hiện dòng <code>average rate: ~50.0</code>. Nhấn mạnh "publish đúng 50 Hz như thiết kế".</span>
+        <span class="tag">Vị trí: mục 8</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 9. TELEOP ═════════════════════════════════════════════════ -->
+<section id="s9">
+  <h2><span class="ico" style="background:#ede9fe">🎮</span>9. Lái robot bằng bàn phím (teleop)</h2>
+
+  <p>Project kèm sẵn script <code>teleop/teleop_key.py</code> — một script Python (rclpy) xuất bản lệnh lên <code>/cmd_vel</code> khi bạn bấm phím. Chạy nó ở terminal #2 (đã <code>source</code>):</p>
+
+  <pre><span class="lb">bash · WSL2 · terminal #2</span><code>python3 teleop/teleop_key.py            <span class="cm"># mặc định an toàn</span>
+python3 teleop/teleop_key.py --step 0.05   <span class="cm"># bước nhỏ cho người mới</span></code></pre>
+
+  <table>
+    <tr><th>Phím</th><th>Tác dụng</th></tr>
+    <tr><td><code>w</code> / <code>s</code></td><td>tăng / giảm tuyến tiến (linear)</td></tr>
+    <tr><td><code>a</code> / <code>d</code></td><td>quay trái / phải (angular)</td></tr>
+    <tr><td><code>space</code></td><td>dừng ngay lập tức</td></tr>
+    <tr><td><code>+</code> / <code>-</code></td><td>to / nhỏ bước điều khiển</td></tr>
+    <tr><td><code>q</code> / Ctrl-C</td><td>thoát (luôn gửi lệnh dừng trước)</td></tr>
+  </table>
+  <p>Có cơ chế <strong>deadman</strong>: nếu bạn không bấm phím trong 0.5 giây, lệnh tự động về 0 — tránh robot chạy tự do.</p>
+
+  <div class="note bad">
+    <span class="note-i">⛔</span>
+    <div class="note-b">
+      <strong>Quan trọng — đọc trước khi lái!</strong>
+      <p>Hiện tại firmware hiểu <code>linear.x</code> / <code>angular.z</code> <strong>trực tiếp thành moment lực (Nm)</strong> trên motor CyberGear, <strong>chưa phải vận tốc</strong> (m/s, rad/s). Đây là lỗi chưa sửa (đánh dấu "#4" trong <code>teleop/README.md</code>; code thực tế ở <code>User/APP/motor_task.c</code>). Hệ quả: robot có thể giật mạnh nếu bước lớn. <strong>Luôn bắt đầu với <code>--step</code> nhỏ</strong> và đứng sẵn để bấm <code>space</code>.</p>
+    </div>
+  </div>
+
+  <h3>Luồng lệnh từ phím đến motor</h3>
+  <div class="dia"><pre><code>
+   teleop_key.py ──▶ /cmd_vel ──▶ cmd_vel_callback ──▶ robot_cmd_set() ──▶ MOTOR_Task ──▶ CyberGear
+   (bàn phím)      Twist         (freertos.c)        mutex RobotCmd_t     mit_ctrl()      ID1 / ID2
+                                                                      (kp=0, kd=0, tau=...)
+                                                                      ⚠ hiện là Nm, chưa phải m/s
+  </code></pre></div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P10: Terminal <code>teleop_key</code></span>
+      <span class="hint">Screenshot terminal hiện khối HELP (bảng phím w/s/a/d/space) và dòng trạng thái <code>linear=... angular=...</code> của script khi đang chạy.</span>
+      <span class="tag">Vị trí: mục 9</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 10. ĐỌC FIRMWARE ═════════════════════════════════════════ -->
+<section id="s10">
+  <h2><span class="ico" style="background:#dcfce7">📖</span>10. Đọc hiểu firmware micro-ROS tối thiểu</h2>
+
+  <p>Toàn bộ node ROS 2 nằm trong hàm <code>StartDefaultTask</code> ở file <code>Core/Src/freertos.c</code>. Đây là "bộ xương" micro-ROS tối thiểu mà bạn có thể học theo:</p>
+
+  <h4>① Đăng ký transport (đường truyền)</h4>
+  <pre><span class="lb">freertos.c</span><code><span class="kw">rmw_uros_set_custom_transport</span>(
+  <span class="kw">true</span>,
+  (<span class="kw">void</span> *) &amp;huart7,                 <span class="cm"># ← UART7, chính là CH340 115200</span>
+  cubemx_transport_open,
+  cubemx_transport_close,
+  cubemx_transport_write,
+  cubemx_transport_read);</code></pre>
+
+  <h4>② Cấp bộ cấp phát (allocator) thân thiện FreeRTOS</h4>
+  <p>MCU không cho phép malloc lung tung, nên ta cắm các hàm cấp phát của riêng mình (<code>microros_allocate</code>...) để micro-ROS dùng heap của FreeRTOS một cách kiểm soát.</p>
+
+  <h4>③ Khởi tạo node + đồng bộ</h4>
+  <pre><span class="lb">freertos.c</span><code>rclc_support_init(&amp;support, 0, NULL, &amp;allocator);
+rmw_uros_sync_session(1000);                            <span class="cm"># bắt tay với Agent</span>
+rclc_node_init_default(&amp;node, <span class="str">"stm32h7_node"</span>, <span class="str">""</span>, &amp;support);</code></pre>
+
+  <h4>④ Tạo publisher / subscriber</h4>
+  <pre><span class="lb">freertos.c</span><code><span class="cm"># ví dụ 1 publisher /imu</span>
+rclc_publisher_init_default(
+  &amp;pub_imu, &amp;node,
+  ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu),
+  <span class="str">"imu"</span>);
+
+<span class="cm"># và 1 subscriber /cmd_vel</span>
+rclc_subscription_init_default(
+  &amp;sub_cmd_vel, &amp;node,
+  ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist),
+  <span class="str">"cmd_vel"</span>);</code></pre>
+
+  <h4>⑤ Executor + vòng lặp publish 50 Hz</h4>
+  <pre><span class="lb">freertos.c</span><code><span class="cm"># Executor chỉ có 1 handle (subscriber /cmd_vel)</span>
+rclc_executor_init(&amp;executor, &amp;support.context, 1, &amp;allocator);
+rclc_executor_add_subscription(&amp;executor, &amp;sub_cmd_vel, &amp;cmd_vel_msg,
+  &amp;cmd_vel_callback, ON_NEW_DATA);
+
+<span class="kw">for</span> (;;) {
+  rclc_executor_spin_some(&amp;executor, RCL_MS_TO_NS(10));   <span class="cm"># xử lý /cmd_vel (non-blocking)</span>
+
+  <span class="kw">uint32_t</span> now = HAL_GetTick();
+  <span class="kw">if</span> ((now - last_pub_ms) &gt;= 20U) {                        <span class="cm"># gate 20 ms → 50 Hz</span>
+    last_pub_ms = now;
+    <span class="cm"># ... đổ dữ liệu vào imu_msg, euler_msg, motor_fb_msg, odom_msg ...</span>
+    rcl_publish(&amp;pub_imu, &amp;imu_msg, NULL);
+  }
+}</code></pre>
+
+  <div class="grid2">
+    <div class="card">
+      <h4>Static buffer — tránh heap</h4>
+      <p style="font-size:13px">Các mảng động trong message (ví dụ <code>JointState.position</code>) được trỏ vào mảng <code>static</code> khai báo sẵn, để micro-ROS không phải cấp phát động lúc chạy.</p>
+    </div>
+    <div class="card">
+      <h4>Covariance = −1</h4>
+      <p style="font-size:13px">Theo quy ước REP-145, đặt <code>covariance[0] = -1</code> nghĩa là "không biết độ lệch". Cách viết chuẩn, không phải bug.</p>
+    </div>
+  </div>
+
+  <h3>Sơ đồ task &amp; dòng dữ liệu</h3>
+  <div class="dia"><pre><code>
+   BMI088 ─SPI2─▶ INS_Task (1 kHz, Mahony) ─▶ quaternion ──┐
+                                                          ├──▶ defaultTask (50 Hz) ─publish─▶ /imu, /euler
+   CyberGear ─FDCAN─▶ CAN_MotorFeedback ──────────────────┤
+                                                          ├──▶ defaultTask ─publish─▶ /motor_fb
+   encoder+IMU ──▶ OBSERVE_Task (Kalman) ─▶ v_filter ──────┘
+                                                      ├──▶ defaultTask ─publish─▶ /odom (dead-reckon)
+   /cmd_vel ─sub─▶ cmd_vel_callback ─▶ robot_cmd_set ─▶ MOTOR_Task ─▶ CyberGear
+  </code></pre></div>
+
+  <div class="shot">
+    <span class="shot-ico">📷</span>
+    <div class="shot-b">
+      <span class="cap">Ảnh chụp — P11 (tuỳ chọn): VS Code mở <code>freertos.c</code></span>
+      <span class="hint">Screenshot VS Code con trỏ đang ở hàm <code>StartDefaultTask</code>, có thể mở sidebar outline để thấy cấu trúc. Giúp người đọc định vị đúng chỗ trong code thật.</span>
+      <span class="tag">Vị trí: mục 10</span>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ 11. LỖI THƯỜNG GẶP ═══════════════════════════════════════ -->
+<section id="s11">
+  <h2><span class="ico" style="background:#fee2e2">🛠️</span>11. Lỗi thường gặp &amp; cách sửa</h2>
+
+  <table>
+    <tr><th>Hiện tượng</th><th>Nguyên nhân</th><th>Cách sửa</th></tr>
+    <tr>
+      <td>WSL không thấy <code>/dev/ttyUSB0</code></td>
+      <td>Chưa forward USB / sai <code>busid</code></td>
+      <td>Chạy <code>usbipd list</code> → <code>usbipd attach --wsl --busid X-X</code> (PowerShell Admin)</td>
+    </tr>
+    <tr>
+      <td>Agent không ra <code>Session established</code></td>
+      <td>Sai cổng/baud; chưa RESET board; firmware chưa chạy</td>
+      <td>Kiểm <code>ls /dev/ttyUSB*</code>, baud <code>115200</code>; đảm bảo đã nhấn RESET <em>sau khi</em> Agent chạy</td>
+    </tr>
+    <tr>
+      <td><code>ros2 topic list</code> trống</td>
+      <td>Terminal echo chưa <code>source</code>; hoặc sai <code>ROS_DOMAIN_ID</code></td>
+      <td>Chạy <code>source ~/microros_ws/install/setup.bash</code>; đặt cùng <code>ROS_DOMAIN_ID=0</code> ở 2 terminal</td>
+    </tr>
+    <tr>
+      <td><code>/euler</code> nhảy loạn 3 giây đầu</td>
+      <td>Bộ lọc Mahony chưa hội tụ</td>
+      <td>Bình thường — chờ <code>ins_flag = 1</code> (~3 s) rồi mới tin giá trị</td>
+    </tr>
+    <tr>
+      <td>Motor không chạy</td>
+      <td><code>/cmd_vel</code> = 0 nên <code>enable = 0</code>; hoặc bước quá nhỏ</td>
+      <td>Gửi <code>linear.x ≠ 0</code> hoặc <code>angular.z ≠ 0</code>; nhớ cảnh báo torque-vs-velocity ở mục 9</td>
+    </tr>
+    <tr>
+      <td>Robot giật mạnh khi teleop</td>
+      <td>Firmware dùng trực tiếp <code>cmd_vel</code> làm moment lực (Nm)</td>
+      <td>Dùng <code>--step</code> thật nhỏ; đứng sẵn bấm <code>space</code></td>
+    </tr>
+    <tr>
+      <td>Build lỗi thiếu <code>libmicroros.a</code></td>
+      <td>Chưa build thư viện tĩnh micro-ROS (bị gitignore)</td>
+      <td>Theo script Docker trong <code>micro_ros_stm32cubemx_utils/</code> để sinh lib</td>
+    </tr>
+  </table>
+</section>
+
+<!-- ═══ 12. TÓM TẮT ══════════════════════════════════════════════ -->
+<section id="s12">
+  <h2><span class="ico" style="background:#dbeafe">✅</span>12. Tóm tắt &amp; đi tiếp đâu</h2>
+
+  <h3>3 điều cần nhớ</h3>
+  <ol>
+    <li><strong>micro-ROS</strong> = ROS 2 native trên MCU; board thành một node ROS 2 thật, dùng đúng message chuẩn.</li>
+    <li>Cần một <strong>Agent</strong> chạy trên PC làm cầu nối serial ↔ DDS (phần nặng gánh ở PC).</li>
+    <li>Transport project này là <strong>UART 115200 qua CH340</strong> → <code>/dev/ttyUSB0</code>.</li>
+  </ol>
+
+  <h3>Bạn đã thành công khi...</h3>
+  <div class="note ok">
+    <span class="note-i">🎯</span>
+    <div class="note-b">
+      <strong>Checklist</strong>
+      <p>✔️ <code>ros2 node list</code> thấy <code>/stm32h7_node</code><br>
+      ✔️ <code>ros2 topic echo /imu</code> ra số (quaternion, accel.z ≈ 9.81)<br>
+      ✔️ <code>ros2 topic hz /imu</code> ≈ <strong>50 Hz</strong><br>
+      ✔️ Teleop bấm phím thì motor (kết nối) phản ứng</p>
+    </div>
+  </div>
+
+  <h3>Đi tiếp đâu?</h3>
+  <ul>
+    <li>📖 <strong>Đào sâu:</strong> đọc bài nâng cao <a href="blog_microros_stm32h7.html">blog_microros_stm32h7.html — Kỹ thuật thực chiến</a> (thiết kế task FreeRTOS, debug bộ lọc Mahony, mạng đa máy ROS 2).</li>
+    <li>📐 <strong>Hiểu kiến trúc đầy đủ:</strong> <a href="docs/TECHNICAL.md">docs/TECHNICAL.md</a> (sơ đồ task, bảng topic, mô hình Kalman, động học vi sai).</li>
+    <li>🐛 <strong>Debug bằng VS Code:</strong> <a href="docs/DEBUG.md">docs/DEBUG.md</a> (Cortex-Debug + OpenOCD + ST-Link).</li>
+  </ul>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <p>Hướng dẫn "Bắt đầu với micro-ROS trên STM32H723 — cho người mới" · Dựa trên firmware thực tế của repo <code>ros_h7</code>.</p>
+  <p style="margin-top:6px">STM32H723VGT6 · FreeRTOS · micro-ROS Jazzy · ROS 2</p>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,38 @@
+# Build output
+build/
+
+# micro-ROS prebuilt library (rebuilt via Docker — see micro_ros_stm32cubemx_utils/README.md)
+micro_ros_stm32cubemx_utils/microros_static_library/libmicroros/
+micro_ros_stm32cubemx_utils/microros_static_library_ide/libmicroros/
+
+# CMSIS DSP prebuilt libraries (~164 MB, not linked by this project)
+# Project only uses DSP/Include headers (arm_math.h inline wrappers → libm)
+Drivers/CMSIS/DSP/Lib/
+Drivers/CMSIS/DSP/Examples/
+Drivers/CMSIS/DSP/DSP_Lib_TestSuite/
+Drivers/CMSIS/DSP/PythonWrapper/
+
+# Keil build artifacts
+MDK-ARM/*.uvguix.*
+MDK-ARM/DebugConfig/
+MDK-ARM/Listings/
+MDK-ARM/Objects/
+*.dep
+*.map
+
+# STM32CubeIDE
+.settings/
+.cproject
+.project
+Debug/
+Release/
+
+# VS Code
+.vscode/
+
+# Xiaomi_gear_ARM là project mẫu riêng, không thuộc repo này
+Xiaomi_gear_ARM/
+
+# OS
+Thumbs.db
+.DS_Store
