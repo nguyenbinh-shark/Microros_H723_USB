@@ -67,37 +67,12 @@
 /* USER CODE BEGIN Variables */
 extern UART_HandleTypeDef huart7;
 /* USER CODE END Variables */
-
 /* Definitions for defaultTask */
 osThreadId_t defaultTaskHandle;
 const osThreadAttr_t defaultTask_attributes = {
   .name = "defaultTask",
   .stack_size = 3000 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
-};
-
-/* Definitions for INS_TASK */
-osThreadId_t INS_TaskHandle;
-const osThreadAttr_t INS_Task_attributes = {
-  .name = "INS_TASK",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityRealtime,
-};
-
-/* Definitions for OBSERVE_TASK */
-osThreadId_t Observe_TaskHandle;
-const osThreadAttr_t Observe_Task_attributes = {
-  .name = "OBSERVE_TASK",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityAboveNormal,
-};
-
-/* Definitions for MOTOR_TASK */
-osThreadId_t Motor_TaskHandle;
-const osThreadAttr_t Motor_Task_attributes = {
-  .name = "MOTOR_TASK",
-  .stack_size = 1024 * 4,
-  .priority = (osPriority_t) osPriorityHigh,
+  .priority = (osPriority_t) osPriorityNormal,
 };
 
 /* Private function prototypes -----------------------------------------------*/
@@ -122,6 +97,7 @@ void * microros_zero_allocate(size_t number_of_elements, size_t size_of_element,
 
 void StartDefaultTask(void *argument);
 
+extern void MX_USB_DEVICE_Init(void);
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /**
@@ -155,12 +131,13 @@ void MX_FREERTOS_Init(void) {
   defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
 
   /* USER CODE BEGIN RTOS_THREADS */
-  /* Temporarily commented out to isolate reset issue */
-  // INS_TaskHandle     = osThreadNew(INS_Task_Entry,     NULL, &INS_Task_attributes);
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
 
   /* USER CODE BEGIN RTOS_EVENTS */
   /* add events, ... */
   /* USER CODE END RTOS_EVENTS */
+
 }
 
 /* USER CODE BEGIN Header_StartDefaultTask */
@@ -172,6 +149,8 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
+  /* init code for USB_DEVICE */
+  MX_USB_DEVICE_Init();
   /* USER CODE BEGIN StartDefaultTask */
   rmw_uros_set_custom_transport(
     true,
@@ -406,3 +385,4 @@ void Motor_Task_Entry(void *argument)
   Motor_task();
 }
 /* USER CODE END Application */
+
