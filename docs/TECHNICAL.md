@@ -20,7 +20,7 @@ Báo cáo trình bày thiết kế và triển khai hệ thống nhúng điều 
 
 | Thành phần | Thông số |
 |---|---|
-| Vi điều khiển | STM32H723VGT6 (ARM Cortex-M7, 550 MHz) |
+| Vi điều khiển | STM32H723VGT6 (ARM Cortex-M7, 192 MHz) |
 | Flash / RAM | 1024 KB / 560 KB (128 KB DTCMRAM + 320 KB AXI SRAM) |
 | IMU | BMI088 — Accel ±6g + Gyro ±2000°/s, SPI2, 1 kHz ODR |
 | Motor | 2× RobStride BLDC (FDCAN protocol) |
@@ -39,7 +39,7 @@ Báo cáo trình bày thiết kế và triển khai hệ thống nhúng điều 
 ┌────────────────────────────────────────────────────────────────┐
 │                        STM32H723VGT6                           │
 │                                                                │
-│  [main.c]  DWT_Init(550) → BMI088_init() → osKernelStart()     │
+│  [main.c]  DWT_Init(SystemCoreClock) → BMI088_init() → osKernelStart()     │
 │                                                                │
 │  ┌────────────┐ ┌────────────┐ ┌───────────┐ ┌─────────────┐   │
 │  │ INS_Task   │ │OBSERVE_Task│ │MOTOR_Task │ │ defaultTask │   │

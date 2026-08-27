@@ -35,6 +35,8 @@ extern volatile float g_cmd_velocity;
 extern volatile float g_cmd_yaw_rate;
 extern volatile uint8_t g_system_enabled;
 
+uint8_t motor_get_enabled_state(void);
+
 /* Exported from freertos.c */
 extern uint8_t micro_ros_get_state(void);
 
@@ -143,7 +145,7 @@ static void LCD_RenderPageBackground(uint8_t page)
             LCD_DrawCard(2, 151, 276, 64, "VELOCITY KALMAN OBSERVER", UI_COLOR_BORDER);
             LCD_ShowString(6, 167, (const uint8_t *)"FUSED Vx  :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             LCD_ShowString(6, 182, (const uint8_t *)"FUSED Wz  :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 197, (const uint8_t *)"POS X_INT :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 197, (const uint8_t *)"SLIP DET  :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             break;
 
         /* ── PAGE 3: COMMUNICATION & SYSTEM DIAGNOSTICS ───────────── */
@@ -157,7 +159,7 @@ static void LCD_RenderPageBackground(uint8_t page)
             LCD_ShowString(6, 101, (const uint8_t *)"USB Queue :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
 
             LCD_DrawCard(2, 120, 276, 95, "HARDWARE & RTOS DIAGNOSTICS", UI_COLOR_BORDER);
-            LCD_ShowString(6, 136, (const uint8_t *)"MCU Clock : STM32H723 @ 550 MHz", UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 136, (const uint8_t *)"MCU Clock : STM32H723 @ 192 MHz", UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
             LCD_ShowString(6, 151, (const uint8_t *)"RTOS Heap : 96 KB (heap_4: OK)", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
             LCD_ShowString(6, 166, (const uint8_t *)"Tasks     : 5 Running (All OK)", UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
             LCD_ShowString(6, 181, (const uint8_t *)"RC Link   : UART5 (PD2) 100k 8E2", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
@@ -172,7 +174,6 @@ static void LCD_RenderPageBackground(uint8_t page)
 
 void LCD_Debug_Init(void)
 {
-    LCD_Init();
     NavKey_Init();
     s_current_page = 0;
     s_last_drawn_page = 0xFF;
@@ -193,6 +194,16 @@ void LCD_Debug_Update(void)
     else if (key == NAV_KEY_LEFT || key == NAV_KEY_UP)
     {
         s_current_page = (s_current_page + TOTAL_PAGES - 1) % TOTAL_PAGES;
+    }
+
+    /* Print diagnostic to serial terminal every 1s */
+    static uint32_t last_diag_tick = 0;
+    uint32_t now_tick = HAL_GetTick();
+    if ((now_tick - last_diag_tick) >= 1000U)
+    {
+        last_diag_tick = now_tick;
+        printf("[LCD_DIAG] Page=%u, RawADC=%u, SPI1_Err=0x%08lX\r\n", 
+               s_current_page, NavKey_GetRawADC(), hspi1.ErrorCode);
     }
 
     /* 2. Redraw Page Background if Page Changed */
@@ -254,22 +265,36 @@ void LCD_Debug_Update(void)
                     LCD_ShowString(172, 66, (const uint8_t *)"RC:ESTOP ", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
                 }
             } else {
-                LCD_ShowString(172, 66, (const uint8_t *)(g_system_enabled ? "ENABLED " : "IDLE/OFF"), (g_system_enabled ? UI_COLOR_GREEN : UI_COLOR_MUTED), UI_COLOR_PANEL, 12, 0);
+                uint8_t motor_state = motor_get_enabled_state();
+                LCD_ShowString(172, 66, (const uint8_t *)(motor_state ? "ENABLED " : "IDLE/OFF"), (motor_state ? UI_COLOR_GREEN : UI_COLOR_MUTED), UI_COLOR_PANEL, 12, 0);
             }
 
-            snprintf(buf, sizeof(buf), "%+6.2f rad/s", m_vel[0]);
-            LCD_ShowString(6, 100, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 16, 0);
-            snprintf(buf, sizeof(buf), "%+5.2f Nm ", m_tor[0]);
-            LCD_ShowString(40, 120, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
-            snprintf(buf, sizeof(buf), "%+6.1f rad", m_pos[0]);
-            LCD_ShowString(40, 134, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            CAN_BusMetrics_t can_m;
+            CAN_GetMetrics(&can_m);
 
-            snprintf(buf, sizeof(buf), "%+6.2f rad/s", m_vel[1]);
-            LCD_ShowString(146, 100, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 16, 0);
+            if (m_valid[0]) {
+                snprintf(buf, sizeof(buf), "%+6.2f rad/s", m_vel[0]);
+                LCD_ShowString(6, 100, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 16, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "OFFLINE (%3lu) ", (unsigned long)(can_m.can1_rx_cnt % 1000));
+                LCD_ShowString(6, 100, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 16, 0);
+            }
+            snprintf(buf, sizeof(buf), "%+5.2f Nm ", m_tor[0]);
+            LCD_ShowString(40, 120, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            snprintf(buf, sizeof(buf), "%+6.1f rad", m_pos[0]);
+            LCD_ShowString(40, 134, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+
+            if (m_valid[1]) {
+                snprintf(buf, sizeof(buf), "%+6.2f rad/s", m_vel[1]);
+                LCD_ShowString(146, 100, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 16, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "OFFLINE (%3lu) ", (unsigned long)(can_m.can3_rx_cnt % 1000));
+                LCD_ShowString(146, 100, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 16, 0);
+            }
             snprintf(buf, sizeof(buf), "%+5.2f Nm ", m_tor[1]);
-            LCD_ShowString(180, 120, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(180, 120, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+6.1f rad", m_pos[1]);
-            LCD_ShowString(180, 134, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(180, 134, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
 
             snprintf(buf, sizeof(buf), "%+5.1f deg", (double)Pitch_deg);
             LCD_ShowString(46, 169, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
@@ -283,7 +308,7 @@ void LCD_Debug_Update(void)
             snprintf(buf, sizeof(buf), "Mahony 1kHz (ins_flag=%d)", INS.ins_flag);
             LCD_ShowString(46, 199, (const uint8_t *)buf, (INS.ins_flag ? UI_COLOR_GREEN : UI_COLOR_ORANGE), UI_COLOR_PANEL, 12, 0);
 
-            snprintf(buf, sizeof(buf), "H723 @ 550MHz | NAV: <>");
+            snprintf(buf, sizeof(buf), "H723 @ 192MHz | NAV: <>");
             LCD_ShowString(6, 224, (const uint8_t *)buf, UI_COLOR_WHITE, 0x0128, 12, 0);
             snprintf(buf, sizeof(buf), "TX:#%-5lu", metrics.pub_tx_count);
             LCD_ShowString(200, 224, (const uint8_t *)buf, UI_COLOR_ACCENT, 0x0128, 12, 0);
@@ -293,21 +318,40 @@ void LCD_Debug_Update(void)
         /* ── PAGE 1: DUAL MOTORS & ODOMETRY ───────────────────────── */
         case 1:
         {
+            CAN_BusMetrics_t can_m;
+            CAN_GetMetrics(&can_m);
+
             float v_l = m_vel[0] * WHEEL_RADIUS;
             snprintf(buf, sizeof(buf), "%+6.2f rad/s  (%+5.2f m/s)", m_vel[0], v_l);
-            LCD_ShowString(36, 41, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 41, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+5.2f Nm", m_tor[0]);
-            LCD_ShowString(36, 56, (const uint8_t *)buf, UI_COLOR_YELLOW, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 56, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+7.1f rad", m_pos[0]);
-            LCD_ShowString(174, 56, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(174, 56, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+
+            if (m_valid[0]) {
+                snprintf(buf, sizeof(buf), "BUS: CAN1 | RX:%-5lu | STATUS: OK ", can_m.can1_rx_cnt);
+                LCD_ShowString(6, 71, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "BUS: CAN1 | RX:%-5lu | OFFLINE    ", can_m.can1_rx_cnt);
+                LCD_ShowString(6, 71, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+            }
 
             float v_r = m_vel[1] * WHEEL_RADIUS;
             snprintf(buf, sizeof(buf), "%+6.2f rad/s  (%+5.2f m/s)", m_vel[1], v_r);
-            LCD_ShowString(36, 105, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 105, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+5.2f Nm", m_tor[1]);
-            LCD_ShowString(36, 120, (const uint8_t *)buf, UI_COLOR_YELLOW, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 120, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+7.1f rad", m_pos[1]);
-            LCD_ShowString(174, 120, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(174, 120, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+
+            if (m_valid[1]) {
+                snprintf(buf, sizeof(buf), "BUS: CAN3 | RX:%-5lu | STATUS: OK ", can_m.can3_rx_cnt);
+                LCD_ShowString(6, 135, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "BUS: CAN3 | RX:%-5lu | OFFLINE    ", can_m.can3_rx_cnt);
+                LCD_ShowString(6, 135, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+            }
 
             float forward_v = (v_r + v_l) / 2.0f;
             float diff_w    = (v_r - v_l) / WHEEL_BASE;
@@ -343,14 +387,19 @@ void LCD_Debug_Update(void)
             snprintf(buf, sizeof(buf), "[%.2f, %.2f, %.2f, %.2f]", (double)INS.q[0], (double)INS.q[1], (double)INS.q[2], (double)INS.q[3]);
             LCD_ShowString(48, 133, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
 
-            snprintf(buf, sizeof(buf), "%+6.3f m/s", (double)Observe.v_filter);
+            snprintf(buf, sizeof(buf), "%+6.3f m/s (Od:%+5.2f)", (double)Observe.v_filter, (double)Observe.v_odom);
             LCD_ShowString(84, 167, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
 
             snprintf(buf, sizeof(buf), "%+6.3f rad/s", (double)Observe.omega_filter);
             LCD_ShowString(84, 182, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
 
-            snprintf(buf, sizeof(buf), "%+7.2f m", (double)Observe.x_filter);
-            LCD_ShowString(84, 197, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            if (Observe.is_slipping) {
+                snprintf(buf, sizeof(buf), "SLIP! %2.0f%% [IMU FUSION]", (double)(Observe.slip_ratio * 100.0f));
+                LCD_ShowString(84, 197, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+            } else {
+                snprintf(buf, sizeof(buf), "NO SLIP (Grip %2.0f%%) ", (double)((1.0f - Observe.slip_ratio) * 100.0f));
+                LCD_ShowString(84, 197, (const uint8_t *)buf, UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
+            }
 
             LCD_ShowString(6, 224, (const uint8_t *)"PAGE: IMU & AHRS", UI_COLOR_WHITE, 0x0128, 12, 0);
             snprintf(buf, sizeof(buf), "NAV: [<-/->]");
@@ -391,12 +440,17 @@ void LCD_Debug_Update(void)
 void LCD_Task_Entry(void *argument)
 {
     (void)argument;
+    printf("[LCD] LCD_Task_Entry started!\r\n");
     osDelay(200); /* Wait for SPI, ADC and peripherals to stabilize */
     LCD_Debug_Init();
+    printf("[LCD] LCD_Debug_Init done, entering update loop\r\n");
 
     for (;;)
     {
         LCD_Debug_Update();
+        /* CAN/motor diagnostics live here rather than in Motor_task so that
+           formatting and logging can never eat into the 10 ms control period. */
+        motor_diag_print();
         osDelay(50); /* 20 Hz update rate for ultra-smooth key response */
     }
 }

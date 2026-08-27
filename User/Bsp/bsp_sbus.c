@@ -1,11 +1,12 @@
 #include "bsp_sbus.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>   /* abs() — was implicitly declared, returning int */
 #include <math.h>
 
 sbus_t sbus = {0};
-UART_HandleTypeDef huart5;
-DMA_HandleTypeDef hdma_uart5_rx;
+extern UART_HandleTypeDef huart5;
+extern DMA_HandleTypeDef hdma_uart5_rx;
 
 static uint8_t sbus_rx[SBUS_RX_BUFSIZE];
 
@@ -143,11 +144,18 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     }
 }
 
+extern void debug_uart_tx_reset(void);
+
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
     if (huart->Instance == UART5)
     {
         sbus_start_dma();
+    }
+    else if (huart->Instance == UART7)
+    {
+        /* Debug console: clear the stuck TX so the ring keeps draining. */
+        debug_uart_tx_reset();
     }
 }
 
@@ -202,7 +210,7 @@ void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_w
      * Range 364..1684, Center 1024
      */
     int32_t raw_vx = (int32_t)sbus.ch[1] - (int32_t)SBUS_CHANNEL_MID;
-    if (abs(raw_vx) < 35) raw_vx = 0; /* Deadband ±35 */
+    if (labs(raw_vx) < 35) raw_vx = 0; /* Deadband ±35 */
     *out_vx = ((float)raw_vx / 660.0f) * max_vx;
 
     /*
@@ -210,7 +218,7 @@ void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_w
      * Range 364..1684, Center 1024 (Left/Right)
      */
     int32_t raw_wz = (int32_t)sbus.ch[0] - (int32_t)SBUS_CHANNEL_MID;
-    if (abs(raw_wz) < 35) raw_wz = 0; /* Deadband ±35 */
+    if (labs(raw_wz) < 35) raw_wz = 0; /* Deadband ±35 */
     *out_wz = -((float)raw_wz / 660.0f) * max_wz; /* Inverted for standard ROS CCW positive */
 }
 

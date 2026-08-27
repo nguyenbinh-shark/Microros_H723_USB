@@ -186,9 +186,9 @@ int rs_ext_parse_feedback(rs_ext_fb_t *fb, uint32_t rx_ext_id, const uint8_t *rx
     }
 
     uint8_t comm_type = (rx_ext_id >> 24) & 0x1F;
-    if (comm_type != RS_CAN_TYPE_FEEDBACK)
+    if (comm_type != RS_CAN_TYPE_FEEDBACK && comm_type != RS_CAN_TYPE_ACTIVE_RPT)
     {
-        return -2; /* Not a Type 2 feedback frame */
+        return -2; /* Not a feedback frame */
     }
 
     fb->mode_stat  = (rx_ext_id >> 22) & 0x03;
@@ -196,16 +196,47 @@ int rs_ext_parse_feedback(rs_ext_fb_t *fb, uint32_t rx_ext_id, const uint8_t *rx
     fb->motor_id   = (rx_ext_id >> 8) & 0xFF;
     fb->master_id  = rx_ext_id & 0xFF;
 
-    uint16_t pos_raw = ((uint16_t)rx_data[0] << 8) | rx_data[1];
+    uint16_t p_raw   = ((uint16_t)rx_data[0] << 8) | rx_data[1];
     uint16_t vel_raw = ((uint16_t)rx_data[2] << 8) | rx_data[3];
     uint16_t tor_raw = ((uint16_t)rx_data[4] << 8) | rx_data[5];
     uint16_t tmp_raw = ((uint16_t)rx_data[6] << 8) | rx_data[7];
 
-    fb->pos  = uint_to_float(pos_raw, RS_EXT_P_MIN, RS_EXT_P_MAX, 16);
-    fb->vel  = uint_to_float(vel_raw, RS_EXT_V_MIN, RS_EXT_V_MAX, 16);
-    fb->tor  = uint_to_float(tor_raw, RS_EXT_T_MIN, RS_EXT_T_MAX, 16);
-    fb->temp = ((float)tmp_raw) / 10.0f;
+    float raw_pos = uint_to_float(p_raw, RS_EXT_P_MIN, RS_EXT_P_MAX, 16);
+    fb->pos_raw = raw_pos;
+    fb->vel     = uint_to_float(vel_raw, RS_EXT_V_MIN, RS_EXT_V_MAX, 16);
+    fb->tor     = uint_to_float(tor_raw, RS_EXT_T_MIN, RS_EXT_T_MAX, 16);
+    fb->temp    = ((float)tmp_raw) / 10.0f;
     fb->last_rx_tick = HAL_GetTick();
+
+    /* ── Continuous Multi-turn Angle Accumulation ─────────────── */
+    const float span = RS_EXT_P_MAX - RS_EXT_P_MIN; /* ~25.132741 rad (8*pi) */
+    const float half_span = span * 0.5f;
+
+    if (!fb->init_done)
+    {
+        fb->last_raw_pos = raw_pos;
+        fb->pos          = raw_pos;
+        fb->round_cnt    = 0;
+        fb->init_done    = 1U;
+    }
+    else
+    {
+        float delta = raw_pos - fb->last_raw_pos;
+        if (delta > half_span)
+        {
+            /* Jumped backward across lower boundary */
+            delta -= span;
+            fb->round_cnt--;
+        }
+        else if (delta < -half_span)
+        {
+            /* Jumped forward across upper boundary */
+            delta += span;
+            fb->round_cnt++;
+        }
+        fb->pos += delta;
+        fb->last_raw_pos = raw_pos;
+    }
 
     return 0;
 }
@@ -228,12 +259,41 @@ void rs_parse_feedback(rs_fb_t *fb, const uint8_t *rx_data, uint32_t len)
     fb->v_raw = ((uint16_t)rx_data[3] << 4) | (rx_data[4] >> 4);
     fb->t_raw = (((uint16_t)(rx_data[4] & 0x0Fu)) << 8) | rx_data[5];
 
-    fb->pos = uint_to_float(fb->p_raw, RS_P_MIN, RS_P_MAX, 16);
+    float raw_pos = uint_to_float(fb->p_raw, RS_P_MIN, RS_P_MAX, 16);
+    fb->pos_raw = raw_pos;
     fb->vel = uint_to_float(fb->v_raw, RS_V_MIN, RS_V_MAX, 12);
     fb->tor = uint_to_float(fb->t_raw, RS_T_MIN, RS_T_MAX, 12);
 
     uint16_t temp_raw = ((uint16_t)rx_data[6] << 8) | rx_data[7];
     fb->temp = ((float)temp_raw) / 10.0f;
+
+    /* Continuous Multi-turn Angle Accumulation */
+    const float span = RS_P_MAX - RS_P_MIN;
+    const float half_span = span * 0.5f;
+
+    if (!fb->init_done)
+    {
+        fb->last_raw_pos = raw_pos;
+        fb->pos          = raw_pos;
+        fb->round_cnt    = 0;
+        fb->init_done    = 1U;
+    }
+    else
+    {
+        float delta = raw_pos - fb->last_raw_pos;
+        if (delta > half_span)
+        {
+            delta -= span;
+            fb->round_cnt--;
+        }
+        else if (delta < -half_span)
+        {
+            delta += span;
+            fb->round_cnt++;
+        }
+        fb->pos += delta;
+        fb->last_raw_pos = raw_pos;
+    }
 }
 
 int rs_mit_cmd(hcan_t *hcan, uint16_t motor_id, float pos, float vel, float kp, float kd, float torq)

@@ -1,6 +1,6 @@
 # STM32H723 micro-ROS Robot Controller (USB CDC)
 
-Firmware điều khiển **Robot vi sai (Differential Drive)** chạy trên vi điều khiển **STM32H723VGT6 (550 MHz)** kết hợp **FreeRTOS** và **micro-ROS** giao tiếp qua **cổng USB CDC tốc độ cao (12 Mbps)**.
+Firmware điều khiển **Robot vi sai (Differential Drive)** chạy trên vi điều khiển **STM32H723VGT6 (192 MHz)** kết hợp **FreeRTOS** và **micro-ROS** giao tiếp qua **cổng USB CDC tốc độ cao (12 Mbps)**.
 
 ---
 
@@ -24,8 +24,11 @@ Firmware điều khiển **Robot vi sai (Differential Drive)** chạy trên vi �
 | **Nút điều hướng 5 chiều (ADC1)** | **PA5 (ADC1_IN19)** | Nút gạt 5 chiều chuyển 4 trang hiển thị trên màn hình LCD |
 | **Tay cầm RC SBUS/DBUS (UART5)** | **PD2 (UART5_RX)** | Cổng nhận tín hiệu tay cầm RC (100k 8E2, DMA1 Stream 4) |
 | **IMU BMI088 (SPI2)** | **PB13 (SCK), PB14 (MISO), PB15 (MOSI)**<br>**PC4 (ACC_CS), PC5 (GYRO_CS)** | Cảm biến IMU 6-DOF trên board |
-| **Motor Trái (FDCAN1)** | **PB8 (RX), PB9 (TX)** · **PC13 (EN)** | CAN Bus Motor 1 (Left) |
-| **Motor Phải (FDCAN3)** | **PD0 (RX), PD1 (TX)** · **PC15 (EN)** | CAN Bus Motor 2 (Right) |
+| **Motor Trái (FDCAN1)** | **PD0 (RX), PD1 (TX)** · **PC13 (EN)** | CAN Bus Motor 1 (Left), 1 Mbps |
+| **Motor Phải (FDCAN3)** | **PD12 (RX), PD13 (TX)** · **PC15 (EN)** | CAN Bus Motor 2 (Right), 1 Mbps |
+
+> Chân EN transceiver (PC13/PC14/PC15) là **active-HIGH** — phải kéo lên mức cao.
+> Cấu hình tại `CAN_XCVR_NORMAL_MODE_LEVEL` trong [robot_config.h](User/Config/robot_config.h).
 
 ---
 
@@ -35,12 +38,32 @@ Firmware điều khiển **Robot vi sai (Differential Drive)** chạy trên vi �
 | :--- | :--- | :---: | :---: | :--- |
 | `/cmd_vel` | `geometry_msgs/msg/Twist` | **Sub** | Nhận tức thời | Vận tốc dài `linear.x` (m/s) và vận tốc góc `angular.z` (rad/s) |
 | `/motor_enable` | `std_msgs/msg/Bool` | **Sub** | Sự kiện | `true`: Bật motor chạy; `false`: Ngắt motor (thả trôi/phanh) |
-| `/motor_fb` | `sensor_msgs/msg/JointState` | **Pub** | 10 Hz (mặc định) | Phản hồi góc quay (rad), tốc độ (rad/s) và tải moment (Nm) |
-| `/imu` | `sensor_msgs/msg/Imu` | **Pub** | Tùy chọn (50Hz) | Quaternion, gia tốc và vận tốc góc |
-| `/odom` | `nav_msgs/msg/Odometry` | **Pub** | Tùy chọn (20Hz) | Tọa độ vị trí và vận tốc xe phục vụ Nav2 |
+| `/motor_fb` | `sensor_msgs/msg/JointState` | **Pub** | 50 Hz | Phản hồi góc quay (rad), tốc độ (rad/s) và tải moment (Nm). QoS **BEST_EFFORT**, `frame_id` = `base_link` |
+| `/motor_status` | `std_msgs/msg/UInt8` | **Pub** | 5 Hz | Bitmask tình trạng link CAN / motor — xem bảng dưới |
 
 > **Node Name**: `stm32h7_node`  
-> **Frame ID**: `odom` $\rightarrow$ `base_link` (IMU: `imu_link`)
+> **Frame ID**: `base_link`
+
+`/motor_fb` dùng QoS **BEST_EFFORT**. Subscriber mặc định RELIABLE sẽ không nhận được gì:
+
+```bash
+ros2 topic echo /motor_fb --qos-reliability best_effort
+ros2 topic info /motor_fb -v          # đối chiếu QoS hai đầu khi nghi ngờ
+```
+
+### Bitmask `/motor_status`
+
+| Bit | Giá trị | Ý nghĩa |
+| :-: | :-- | :-- |
+| 0 | `0x01` | Feedback bánh trái (FDCAN1) còn tươi |
+| 1 | `0x02` | Feedback bánh phải (FDCAN3) còn tươi |
+| 2 | `0x04` | FDCAN1 đang Bus_Off |
+| 3 | `0x08` | FDCAN3 đang Bus_Off |
+| 4 | `0x10` | Motor đang ở trạng thái enable |
+| 5 | `0x20` | `/cmd_vel` timeout — xe đang bị giữ dừng |
+
+Bit 0/1 giúp phân biệt "bánh đứng yên" (velocity = 0, bit = 1) với "mất CAN"
+(velocity = 0, bit = 0) — điều mà riêng `/motor_fb` không diễn đạt được.
 
 ---
 

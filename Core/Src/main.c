@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
+#include "adc.h"
 #include "dma.h"
 #include "fdcan.h"
 #include "spi.h"
@@ -29,11 +30,11 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <stdio.h>
 #include "bsp_dwt.h"
 #include "BMI088driver.h"
-#include "can_bsp.h"
 #include "bsp_sbus.h"
+#include "lcd.h"
+#include "stdio.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -106,7 +107,11 @@ int main(void)
   PeriphCommonClock_Config();
 
   /* USER CODE BEGIN SysInit */
-
+  /* Derive the cycle-counter frequency from the actual clock tree instead of a
+     literal: this PLL setup yields 192 MHz, so the previous DWT_Init(550) made
+     every DWT_GetDeltaT() report dt 2.86x too small — which fed straight into
+     the Mahony filter's integration step. */
+  DWT_Init(SystemCoreClock / 1000000U);
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
@@ -114,18 +119,31 @@ int main(void)
   MX_DMA_Init();
   MX_UART7_Init();
   MX_FDCAN1_Init();
-  MX_SPI1_Init();
   MX_SPI2_Init();
   MX_TIM3_Init();
   MX_TIM12_Init();
   MX_FDCAN3_Init();
+  MX_SPI1_Init();
+  MX_ADC1_Init();
+  MX_UART5_Init();
   /* USER CODE BEGIN 2 */
   printf("\r\n========================================\r\n");
   printf("[BOOT] STM32H723 Robot Controller Starting...\r\n");
   printf("[BOOT] Debug Serial: UART7 @ 115200 bps (PE8 TX)\r\n");
 
-  DWT_Init(550);          /* STM32H723 @ 550 MHz, before RTOS */
   sbus_bsp_init();        /* SBUS / DBUS Receiver on UART5 (PD2) */
+
+  printf("[BOOT] Initializing ST7789 LCD (SPI1 Master)...\r\n");
+  LCD_Init();
+  printf("[BOOT] LCD Init Done! SPI1: State=%d, Error=0x%08lX, KernelClk=%lu Hz\r\n", 
+         hspi1.State, hspi1.ErrorCode, HAL_RCCEx_GetPeriphCLKFreq(RCC_PERIPHCLK_SPI1));
+  LCD_Fill(0, 0, LCD_W, LCD_H, BLACK); /* Clear Screen to Black */
+  LCD_DrawRectangle(0, 0, LCD_W-1, LCD_H-1, CYAN);
+  LCD_ShowString(10, 30, (const uint8_t*)"CtrBoard-H7", BRRED, BLACK, 24, 0);
+  LCD_ShowString(10, 80, (const uint8_t*)"micro-ROS USB Link", WHITE, BLACK, 16, 0);
+  LCD_ShowString(10, 110, (const uint8_t*)"STM32H723 @ 550MHz", GREEN, BLACK, 16, 0);
+  printf("[BOOT] LCD Init OK (280x240 Panel Active)\r\n");
+
   uint8_t imu_ret = BMI088_init(&hspi2, 0); /* Try init BMI088, do not block MCU if IMU missing */
   printf("[BOOT] BMI088 IMU: %s\r\n", (imu_ret == 0) ? "OK" : "FAILED / NOT FOUND");
   printf("[BOOT] Launching FreeRTOS Kernel...\r\n");
@@ -181,7 +199,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLM = 2;
   RCC_OscInitStruct.PLL.PLLN = 16;
   RCC_OscInitStruct.PLL.PLLP = 1;
-  RCC_OscInitStruct.PLL.PLLQ = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   RCC_OscInitStruct.PLL.PLLR = 2;
   RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
   RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
@@ -220,7 +238,7 @@ void PeriphCommonClock_Config(void)
 
   /** Initializes the peripherals clock
   */
-  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_FDCAN;
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_FDCAN;
   PeriphClkInitStruct.PLL2.PLL2M = 2;
   PeriphClkInitStruct.PLL2.PLL2N = 25;
   PeriphClkInitStruct.PLL2.PLL2P = 2;
@@ -230,6 +248,7 @@ void PeriphCommonClock_Config(void)
   PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
   PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
   PeriphClkInitStruct.FdcanClockSelection = RCC_FDCANCLKSOURCE_PLL2;
+  PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
   {
     Error_Handler();

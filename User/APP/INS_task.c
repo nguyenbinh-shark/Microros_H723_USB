@@ -51,8 +51,23 @@ void INS_task(void)
 	 INS_Init();
 	 DWT_GetDeltaT(&INS_DWT_Count);  /* Reset counter to "now" — avoids giant dt on first loop */
 
+	 uint8_t first_data_logged = 0;
+	 uint32_t next_wake = osKernelGetTickCount();
+
 	 while(1)
 	 {
+		/* Hold a true 1 kHz cadence; osDelay() drifted by the SPI read time.
+		   osDelayUntil() returns immediately once the target tick has passed,
+		   so after an overrun the deadline is re-anchored to now — otherwise
+		   this task would spin at full speed to "catch up", and it runs at the
+		   highest priority in the system. */
+		next_wake += 1U;
+		{
+			uint32_t now_tick = osKernelGetTickCount();
+			if ((int32_t)(next_wake - now_tick) <= 0) next_wake = now_tick + 1U;
+		}
+		osDelayUntil(next_wake);
+
 		ins_dt = DWT_GetDeltaT(&INS_DWT_Count);
 		if (ins_dt > 0.01f) ins_dt = 0.001f;  /* Cap: ignore any stale dt > 10ms */
     
@@ -72,6 +87,14 @@ void INS_task(void)
   	Gyro.x=BMI088.Gyro[0];
 		Gyro.y=BMI088.Gyro[1];
 		Gyro.z=BMI088.Gyro[2];
+
+		/* Log first IMU data to verify sensor is alive */
+		if (!first_data_logged && ins_time > 10.0f) {
+			printf("[INS] BMI088 Raw: Ax=%.3f Ay=%.3f Az=%.3f Gx=%.4f Gy=%.4f Gz=%.4f\r\n",
+				BMI088.Accel[0], BMI088.Accel[1], BMI088.Accel[2],
+				BMI088.Gyro[0], BMI088.Gyro[1], BMI088.Gyro[2]);
+			first_data_logged = 1;
+		}
 
 		mahony_input(&mahony,Gyro,Accel);
 		mahony_update(&mahony);
@@ -111,6 +134,11 @@ void INS_task(void)
  
 		if(ins_time>3000.0f)
 		{
+			if (!INS.ins_flag) {
+				printf("[INS] Warmup complete! ins_flag=1, Mahony AHRS ready.\r\n");
+				printf("[INS] Pitch=%.2f Roll=%.2f Yaw=%.2f deg\r\n",
+					rad_to_deg(mahony.roll), rad_to_deg(mahony.pitch), rad_to_deg(mahony.yaw));
+			}
 			INS.ins_flag=1; // Quaternion and motion acceleration are ready; control can start.
 			// Read attitude angles.
       INS.Pitch=mahony.roll ;//+ PITCH_OFFSET_RAD;  // Apply pitch calibration offset
@@ -137,7 +165,6 @@ void INS_task(void)
 		{
 		 ins_time++;
 		}
-		    osDelay(1);
 	}
 }
 /**

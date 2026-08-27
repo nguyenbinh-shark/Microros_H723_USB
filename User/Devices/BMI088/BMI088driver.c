@@ -370,9 +370,7 @@ uint8_t bmi088_gyro_init(void)
 
         if (res != write_BMI088_gyro_reg_data_error[write_reg_num][1])
         {
-            write_reg_num--;
-            // return write_BMI088_gyro_reg_data_error[write_reg_num][2];
-            error |= write_BMI088_accel_reg_data_error[write_reg_num][2];
+            error |= write_BMI088_gyro_reg_data_error[write_reg_num][2];
         }
     }
 

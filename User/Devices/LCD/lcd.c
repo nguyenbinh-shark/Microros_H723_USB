@@ -3,12 +3,12 @@
 
 /**
 ************************************************************************
-* @brief:      	LCD_Writ_Bus: LCD串行数据写入函数
-* @param:      	dat - 要写入的串行数据
+* @brief:      	LCD_Writ_Bus: LCD麓庐脨脨脢媒戮脻脨麓脠毛潞炉脢媒
+* @param:      	dat - 脪陋脨麓脠毛碌脛麓庐脨脨脢媒戮脻
 * @retval:     	void
-* @details:    	将串行数据写入LCD，根据使用的通信方式选择使用软件模拟SPI（USE_ANALOG_SPI宏定义为真）或硬件SPI。
-*               - 当USE_ANALOG_SPI宏定义为真时，通过GPIO控制SCLK、MOSI和CS信号，循环将8位数据写入。
-*               - 当USE_ANALOG_SPI宏定义为假时，通过HAL_SPI_Transmit函数使用硬件SPI传输1字节数据。
+* @details:    	陆芦麓庐脨脨脢媒戮脻脨麓脠毛LCD拢卢赂霉戮脻脢鹿脫脙碌脛脥篓脨脜路陆脢陆脩隆脭帽脢鹿脫脙脠铆录镁脛拢脛芒SPI拢篓USE_ANALOG_SPI潞锚露篓脪氓脦陋脮忙拢漏禄貌脫虏录镁SPI隆拢
+*               - 碌卤USE_ANALOG_SPI潞锚露篓脪氓脦陋脮忙脢卤拢卢脥篓鹿媒GPIO驴脴脰脝SCLK隆垄MOSI潞脥CS脨脜潞脜拢卢脩颅禄路陆芦8脦禄脢媒戮脻脨麓脠毛隆拢
+*               - 碌卤USE_ANALOG_SPI潞锚露篓脪氓脦陋录脵脢卤拢卢脥篓鹿媒HAL_SPI_Transmit潞炉脢媒脢鹿脫脙脫虏录镁SPI麓芦脢盲1脳脰陆脷脢媒戮脻隆拢
 ************************************************************************
 **/
 void LCD_Writ_Bus(uint8_t dat) 
@@ -32,10 +32,10 @@ void LCD_Writ_Bus(uint8_t dat)
 }
 /**
 ************************************************************************
-* @brief:      	LCD_WR_DATA8: 向LCD写入8位数据
-* @param:      	dat - 要写入的8位数据
+* @brief:      	LCD_WR_DATA8: 脧貌LCD脨麓脠毛8脦禄脢媒戮脻
+* @param:      	dat - 脪陋脨麓脠毛碌脛8脦禄脢媒戮脻
 * @retval:     	void
-* @details:    	调用LCD_Writ_Bus函数将8位数据写入LCD。
+* @details:    	碌梅脫脙LCD_Writ_Bus潞炉脢媒陆芦8脦禄脢媒戮脻脨麓脠毛LCD隆拢
 ************************************************************************
 **/
 void LCD_WR_DATA8(uint8_t dat)
@@ -44,10 +44,10 @@ void LCD_WR_DATA8(uint8_t dat)
 }
 /**
 ************************************************************************
-* @brief:      	LCD_WR_DATA: 向LCD写入16位数据
-* @param:      	dat - 要写入的16位数据
+* @brief:      	LCD_WR_DATA: 脧貌LCD脨麓脠毛16脦禄脢媒戮脻
+* @param:      	dat - 脪陋脨麓脠毛碌脛16脦禄脢媒戮脻
 * @retval:     	void
-* @details:    	调用LCD_Writ_Bus函数将16位数据的高8位和低8位分别写入LCD。
+* @details:    	碌梅脫脙LCD_Writ_Bus潞炉脢媒陆芦16脦禄脢媒戮脻碌脛赂脽8脦禄潞脥碌脥8脦禄路脰卤冒脨麓脠毛LCD隆拢
 ************************************************************************
 **/
 void LCD_WR_DATA(uint16_t dat)
@@ -57,82 +57,82 @@ void LCD_WR_DATA(uint16_t dat)
 }
 /**
 ************************************************************************
-* @brief:      	LCD_WR_REG: 向LCD写入寄存器地址
-* @param:      	dat - 要写入的寄存器地址
+* @brief:      	LCD_WR_REG: 脧貌LCD脨麓脠毛录脛麓忙脝梅碌脴脰路
+* @param:      	dat - 脪陋脨麓脠毛碌脛录脛麓忙脝梅碌脴脰路
 * @retval:     	void
-* @details:    	通过调用LCD_Writ_Bus函数向LCD写入寄存器地址。
+* @details:    	脥篓鹿媒碌梅脫脙LCD_Writ_Bus潞炉脢媒脧貌LCD脨麓脠毛录脛麓忙脝梅碌脴脰路隆拢
 ************************************************************************
 **/
 void LCD_WR_REG(uint8_t dat)
 {
-	LCD_DC_Clr();//写命令
+	LCD_DC_Clr();//脨麓脙眉脕卯
 	LCD_Writ_Bus(dat);
-	LCD_DC_Set();//写数据
+	LCD_DC_Set();//脨麓脢媒戮脻
 }
 /**
 ************************************************************************
-* @brief:      	LCD_Address_Set: 设置LCD显示区域的地址范围
-* @param:      	x1, y1, x2, y2 - 显示区域的左上角和右下角坐标
+* @brief:      	LCD_Address_Set: 脡猫脰脙LCD脧脭脢戮脟酶脫貌碌脛碌脴脰路路露脦搂
+* @param:      	x1, y1, x2, y2 - 脧脭脢戮脟酶脫貌碌脛脳贸脡脧陆脟潞脥脫脪脧脗陆脟脳酶卤锚
 * @retval:     	void
-* @details:    	根据屏幕方向通过调用LCD_WR_REG和LCD_WR_DATA函数，设置LCD的列地址和行地址，然后写入储存器进行显示。
+* @details:    	赂霉戮脻脝脕脛禄路陆脧貌脥篓鹿媒碌梅脫脙LCD_WR_REG潞脥LCD_WR_DATA潞炉脢媒拢卢脡猫脰脙LCD碌脛脕脨碌脴脰路潞脥脨脨碌脴脰路拢卢脠禄潞贸脨麓脠毛麓垄麓忙脝梅陆酶脨脨脧脭脢戮隆拢
 ************************************************************************
 **/
 void LCD_Address_Set(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2)
 {
 	if(USE_HORIZONTAL==0)
 	{
-		LCD_WR_REG(0x2a);//列地址设置
+		LCD_WR_REG(0x2a);//脕脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(x1);
 		LCD_WR_DATA(x2);
-		LCD_WR_REG(0x2b);//行地址设置
+		LCD_WR_REG(0x2b);//脨脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(y1+20);
 		LCD_WR_DATA(y2+20);
-		LCD_WR_REG(0x2c);//储存器写
+		LCD_WR_REG(0x2c);//麓垄麓忙脝梅脨麓
 	}
 	else if(USE_HORIZONTAL==1)
 	{
-		LCD_WR_REG(0x2a);//列地址设置
+		LCD_WR_REG(0x2a);//脕脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(x1);
 		LCD_WR_DATA(x2);
-		LCD_WR_REG(0x2b);//行地址设置
+		LCD_WR_REG(0x2b);//脨脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(y1+20);
 		LCD_WR_DATA(y2+20);
-		LCD_WR_REG(0x2c);//储存器写
+		LCD_WR_REG(0x2c);//麓垄麓忙脝梅脨麓
 	}
 	else if(USE_HORIZONTAL==2)
 	{
-		LCD_WR_REG(0x2a);//列地址设置
+		LCD_WR_REG(0x2a);//脕脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(x1+20);
 		LCD_WR_DATA(x2+20);
-		LCD_WR_REG(0x2b);//行地址设置
+		LCD_WR_REG(0x2b);//脨脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(y1);
 		LCD_WR_DATA(y2);
-		LCD_WR_REG(0x2c);//储存器写
+		LCD_WR_REG(0x2c);//麓垄麓忙脝梅脨麓
 	}
 	else
 	{
-		LCD_WR_REG(0x2a);//列地址设置
+		LCD_WR_REG(0x2a);//脕脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(x1+20);
 		LCD_WR_DATA(x2+20);
-		LCD_WR_REG(0x2b);//行地址设置
+		LCD_WR_REG(0x2b);//脨脨碌脴脰路脡猫脰脙
 		LCD_WR_DATA(y1);
 		LCD_WR_DATA(y2);
-		LCD_WR_REG(0x2c);//储存器写
+		LCD_WR_REG(0x2c);//麓垄麓忙脝梅脨麓
 	}
 }
 /**
 ************************************************************************
-* @brief:      	LCD_Fill: 在LCD指定区域填充指定颜色
-* @param:      	xsta, ysta, xend, yend - 填充区域的左上角和右下角坐标
-*              	color - 填充颜色
+* @brief:      	LCD_Fill: 脭脷LCD脰赂露篓脟酶脫貌脤卯鲁盲脰赂露篓脩脮脡芦
+* @param:      	xsta, ysta, xend, yend - 脤卯鲁盲脟酶脫貌碌脛脳贸脡脧陆脟潞脥脫脪脧脗陆脟脳酶卤锚
+*              	color - 脤卯鲁盲脩脮脡芦
 * @retval:     	void
-* @details:    	通过调用LCD_Address_Set函数设置LCD显示区域的地址范围，然后在该范围内填充指定颜色。
+* @details:    	脥篓鹿媒碌梅脫脙LCD_Address_Set潞炉脢媒脡猫脰脙LCD脧脭脢戮脟酶脫貌碌脛碌脴脰路路露脦搂拢卢脠禄潞贸脭脷赂脙路露脦搂脛脷脤卯鲁盲脰赂露篓脩脮脡芦隆拢
 ************************************************************************
 **/
 void LCD_Fill(uint16_t xsta,uint16_t ysta,uint16_t xend,uint16_t yend,uint16_t color)
 {          
 	uint16_t i,j; 
-	LCD_Address_Set(xsta,ysta,xend-1,yend-1);//设置显示范围
+	LCD_Address_Set(xsta,ysta,xend-1,yend-1);//脡猫脰脙脧脭脢戮路露脦搂
 	for(i=ysta;i<yend;i++)
 	{													   	 	
 		for(j=xsta;j<xend;j++)
@@ -143,26 +143,26 @@ void LCD_Fill(uint16_t xsta,uint16_t ysta,uint16_t xend,uint16_t yend,uint16_t c
 }
 /**
 ************************************************************************
-* @brief:      	LCD_DrawPoint: 在LCD指定位置画点
-* @param:      	x, y - 点的坐标
-*              	color - 点的颜色
+* @brief:      	LCD_DrawPoint: 脭脷LCD脰赂露篓脦禄脰脙禄颅碌茫
+* @param:      	x, y - 碌茫碌脛脳酶卤锚
+*              	color - 碌茫碌脛脩脮脡芦
 * @retval:     	void
-* @details:    	通过调用LCD_Address_Set函数设置LCD显示区域的地址范围，然后在指定位置画点，颜色由color参数指定。
+* @details:    	脥篓鹿媒碌梅脫脙LCD_Address_Set潞炉脢媒脡猫脰脙LCD脧脭脢戮脟酶脫貌碌脛碌脴脰路路露脦搂拢卢脠禄潞贸脭脷脰赂露篓脦禄脰脙禄颅碌茫拢卢脩脮脡芦脫脡color虏脦脢媒脰赂露篓隆拢
 ************************************************************************
 **/
 void LCD_DrawPoint(uint16_t x,uint16_t y,uint16_t color)
 {
-	LCD_Address_Set(x,y,x,y);//设置光标位置 
+	LCD_Address_Set(x,y,x,y);//脡猫脰脙鹿芒卤锚脦禄脰脙 
 	LCD_WR_DATA(color);
 } 
 /**
 ************************************************************************
-* @brief:      	LCD_DrawLine: 在LCD上画线
-* @param:      	x1, y1 - 线的起始坐标
-*              	x2, y2 - 线的结束坐标
-*              	color - 线的颜色
+* @brief:      	LCD_DrawLine: 脭脷LCD脡脧禄颅脧脽
+* @param:      	x1, y1 - 脧脽碌脛脝冒脢录脳酶卤锚
+*              	x2, y2 - 脧脽碌脛陆谩脢酶脳酶卤锚
+*              	color - 脧脽碌脛脩脮脡芦
 * @retval:     	void
-* @details:    	通过计算坐标增量，选择基本增量坐标轴，从起始坐标到结束坐标逐点画线，颜色由color参数指定。
+* @details:    	脥篓鹿媒录脝脣茫脳酶卤锚脭枚脕驴拢卢脩隆脭帽禄霉卤戮脭枚脕驴脳酶卤锚脰谩拢卢麓脫脝冒脢录脳酶卤锚碌陆陆谩脢酶脳酶卤锚脰冒碌茫禄颅脧脽拢卢脩脮脡芦脫脡color虏脦脢媒脰赂露篓隆拢
 ************************************************************************
 **/
 void LCD_DrawLine(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,uint16_t color)
@@ -170,21 +170,21 @@ void LCD_DrawLine(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,uint16_t color
 	uint16_t t; 
 	int xerr=0,yerr=0,delta_x,delta_y,distance;
 	int incx,incy,uRow,uCol;
-	delta_x=x2-x1; //计算坐标增量 
+	delta_x=x2-x1; //录脝脣茫脳酶卤锚脭枚脕驴 
 	delta_y=y2-y1;
-	uRow=x1;//画线起点坐标
+	uRow=x1;//禄颅脧脽脝冒碌茫脳酶卤锚
 	uCol=y1;
-	if(delta_x>0)incx=1; //设置单步方向 
-	else if (delta_x==0)incx=0;//垂直线 
+	if(delta_x>0)incx=1; //脡猫脰脙碌楼虏陆路陆脧貌 
+	else if (delta_x==0)incx=0;//麓鹿脰卤脧脽 
 	else {incx=-1;delta_x=-delta_x;}
 	if(delta_y>0)incy=1;
-	else if (delta_y==0)incy=0;//水平线 
+	else if (delta_y==0)incy=0;//脣庐脝陆脧脽 
 	else {incy=-1;delta_y=-delta_y;}
-	if(delta_x>delta_y)distance=delta_x; //选取基本增量坐标轴 
+	if(delta_x>delta_y)distance=delta_x; //脩隆脠隆禄霉卤戮脭枚脕驴脳酶卤锚脰谩 
 	else distance=delta_y;
 	for(t=0;t<distance+1;t++)
 	{
-		LCD_DrawPoint(uRow,uCol,color);//画点
+		LCD_DrawPoint(uRow,uCol,color);//禄颅碌茫
 		xerr+=delta_x;
 		yerr+=delta_y;
 		if(xerr>distance)
@@ -201,12 +201,12 @@ void LCD_DrawLine(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,uint16_t color
 }
 /**
 ************************************************************************
-* @brief:      	LCD_DrawRectangle: 在LCD上画矩形
-* @param:      	x1, y1 - 矩形的左上角坐标
-*              	x2, y2 - 矩形的右下角坐标
-*              	color - 矩形的颜色
+* @brief:      	LCD_DrawRectangle: 脭脷LCD脡脧禄颅戮脴脨脦
+* @param:      	x1, y1 - 戮脴脨脦碌脛脳贸脡脧陆脟脳酶卤锚
+*              	x2, y2 - 戮脴脨脦碌脛脫脪脧脗陆脟脳酶卤锚
+*              	color - 戮脴脨脦碌脛脩脮脡芦
 * @retval:     	void
-* @details:    	通过调用LCD_DrawLine函数画出矩形的四条边，颜色由color参数指定。
+* @details:    	脥篓鹿媒碌梅脫脙LCD_DrawLine潞炉脢媒禄颅鲁枚戮脴脨脦碌脛脣脛脤玫卤脽拢卢脩脮脡芦脫脡color虏脦脢媒脰赂露篓隆拢
 ************************************************************************
 **/
 void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,uint16_t color)
@@ -218,13 +218,13 @@ void LCD_DrawRectangle(uint16_t x1, uint16_t y1, uint16_t x2, uint16_t y2,uint16
 }
 /**
 ************************************************************************
-* @brief:      	Draw_Circle: 在LCD上画圆
-* @param:      	x0, y0 - 圆心坐标
-*              	r - 圆的半径
-*              	color - 圆的颜色
+* @brief:      	Draw_Circle: 脭脷LCD脡脧禄颅脭虏
+* @param:      	x0, y0 - 脭虏脨脛脳酶卤锚
+*              	r - 脭虏碌脛掳毛戮露
+*              	color - 脭虏碌脛脩脮脡芦
 * @retval:     	void
-* @details:    	使用中点画圆法，以圆心(x0, y0)为中心，半径为r，在LCD上画出圆，
-*              	颜色由color参数指定。
+* @details:    	脢鹿脫脙脰脨碌茫禄颅脭虏路篓拢卢脪脭脭虏脨脛(x0, y0)脦陋脰脨脨脛拢卢掳毛戮露脦陋r拢卢脭脷LCD脡脧禄颅鲁枚脭虏拢卢
+*              	脩脮脡芦脫脡color虏脦脢媒脰赂露篓隆拢
 ************************************************************************
 **/
 void Draw_Circle(uint16_t x0,uint16_t y0,uint8_t r,uint16_t color)
@@ -242,7 +242,7 @@ void Draw_Circle(uint16_t x0,uint16_t y0,uint8_t r,uint16_t color)
 		LCD_DrawPoint(x0+a,y0+b,color);             //6 
 		LCD_DrawPoint(x0-b,y0+a,color);             //7
 		a++;
-		if((a*a+b*b)>(r*r))//判断要画的点是否过远
+		if((a*a+b*b)>(r*r))//脜脨露脧脪陋禄颅碌脛碌茫脢脟路帽鹿媒脭露
 		{
 			b--;
 		}
@@ -250,15 +250,15 @@ void Draw_Circle(uint16_t x0,uint16_t y0,uint8_t r,uint16_t color)
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChinese: 在LCD上显示汉字字符串
-* @param:      	x, y - 起始坐标，显示汉字字符串的左上角坐标
-*              	s - 要显示的汉字字符串，每个汉字占两个字节
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 汉字字体大小，支持12x12、16x16、24x24、32x32
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChinese: 脭脷LCD脡脧脧脭脢戮潞潞脳脰脳脰路没麓庐
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮潞潞脳脰脳脰路没麓庐碌脛脳贸脡脧陆脟脳酶卤锚
+*              	s - 脪陋脧脭脢戮碌脛潞潞脳脰脳脰路没麓庐拢卢脙驴赂枚潞潞脳脰脮录脕陆赂枚脳脰陆脷
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 潞潞脳脰脳脰脤氓麓贸脨隆拢卢脰搂鲁脰12x12隆垄16x16隆垄24x24隆垄32x32
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	根据sizey选择字体大小，在LCD上显示汉字字符串，可以选择显示模式。
+* @details:    	赂霉戮脻sizey脩隆脭帽脳脰脤氓麓贸脨隆拢卢脭脷LCD脡脧脧脭脢戮潞潞脳脰脳脰路没麓庐拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆隆拢
 ************************************************************************
 **/
 void LCD_ShowChinese(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
@@ -276,27 +276,27 @@ void LCD_ShowChinese(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,ui
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChinese12x12: 在LCD上显示12x12汉字
-* @param:      	x, y - 起始坐标，显示汉字的左上角坐标
-*              	s - 要显示的汉字，每个汉字占两个字节
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 汉字字体大小，支持12x12
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChinese12x12: 脭脷LCD脡脧脧脭脢戮12x12潞潞脳脰
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮潞潞脳脰碌脛脳贸脡脧陆脟脳酶卤锚
+*              	s - 脪陋脧脭脢戮碌脛潞潞脳脰拢卢脙驴赂枚潞潞脳脰脮录脕陆赂枚脳脰陆脷
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 潞潞脳脰脳脰脤氓麓贸脨隆拢卢脰搂鲁脰12x12
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示12x12汉字，可以选择显示模式。
+* @details:    	脭脷LCD脡脧脧脭脢戮12x12潞潞脳脰拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆隆拢
 ************************************************************************
 **/
 void LCD_ShowChinese12x12(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t i,j,m=0;
 	uint16_t k;
-	uint16_t HZnum;//汉字数目
-	uint16_t TypefaceNum;//一个字符所占字节大小
+	uint16_t HZnum;//潞潞脳脰脢媒脛驴
+	uint16_t TypefaceNum;//脪禄赂枚脳脰路没脣霉脮录脳脰陆脷麓贸脨隆
 	uint16_t x0=x;
 	TypefaceNum=(sizey/8+((sizey%8)?1:0))*sizey;
 	                         
-	HZnum=sizeof(tfont12)/sizeof(typFNT_GB12);	//统计汉字数目
+	HZnum=sizeof(tfont12)/sizeof(typFNT_GB12);	//脥鲁录脝潞潞脳脰脢媒脛驴
 	for(k=0;k<HZnum;k++) 
 	{
 		if((tfont12[k].Index[0]==*(s))&&(tfont12[k].Index[1]==*(s+1)))
@@ -306,7 +306,7 @@ void LCD_ShowChinese12x12(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 			{
 				for(j=0;j<8;j++)
 				{	
-					if(!mode)//非叠加方式
+					if(!mode)//路脟碌镁录脫路陆脢陆
 					{
 						if(tfont12[k].Msk[i]&(0x01<<j))LCD_WR_DATA(fc);
 						else LCD_WR_DATA(bc);
@@ -317,9 +317,9 @@ void LCD_ShowChinese12x12(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 							break;
 						}
 					}
-					else//叠加方式
+					else//碌镁录脫路陆脢陆
 					{
-						if(tfont12[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//画一个点
+						if(tfont12[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//禄颅脪禄赂枚碌茫
 						x++;
 						if((x-x0)==sizey)
 						{
@@ -331,31 +331,31 @@ void LCD_ShowChinese12x12(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 				}
 			}
 		}				  	
-		continue;  //查找到对应点阵字库立即退出，防止多个汉字重复取模带来影响
+		continue;  //虏茅脮脪碌陆露脭脫娄碌茫脮贸脳脰驴芒脕垄录麓脥脣鲁枚拢卢路脌脰鹿露脿赂枚潞潞脳脰脰脴赂麓脠隆脛拢麓酶脌麓脫掳脧矛
 	}
 } 
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChinese16x16: 在LCD上显示16x16汉字
-* @param:      	x, y - 起始坐标，显示汉字的左上角坐标
-*              	s - 要显示的汉字，每个汉字占两个字节
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 汉字字体大小，支持16x16
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChinese16x16: 脭脷LCD脡脧脧脭脢戮16x16潞潞脳脰
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮潞潞脳脰碌脛脳贸脡脧陆脟脳酶卤锚
+*              	s - 脪陋脧脭脢戮碌脛潞潞脳脰拢卢脙驴赂枚潞潞脳脰脮录脕陆赂枚脳脰陆脷
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 潞潞脳脰脳脰脤氓麓贸脨隆拢卢脰搂鲁脰16x16
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示16x16汉字，可以选择显示模式。
+* @details:    	脭脷LCD脡脧脧脭脢戮16x16潞潞脳脰拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆隆拢
 ************************************************************************
 **/
 void LCD_ShowChinese16x16(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t i,j,m=0;
 	uint16_t k;
-	uint16_t HZnum;//汉字数目
-	uint16_t TypefaceNum;//一个字符所占字节大小
+	uint16_t HZnum;//潞潞脳脰脢媒脛驴
+	uint16_t TypefaceNum;//脪禄赂枚脳脰路没脣霉脮录脳脰陆脷麓贸脨隆
 	uint16_t x0=x;
   TypefaceNum=(sizey/8+((sizey%8)?1:0))*sizey;
-	HZnum=sizeof(tfont16)/sizeof(typFNT_GB16);	//统计汉字数目
+	HZnum=sizeof(tfont16)/sizeof(typFNT_GB16);	//脥鲁录脝潞潞脳脰脢媒脛驴
 	for(k=0;k<HZnum;k++) 
 	{
 		if ((tfont16[k].Index[0]==*(s))&&(tfont16[k].Index[1]==*(s+1)))
@@ -365,7 +365,7 @@ void LCD_ShowChinese16x16(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 			{
 				for(j=0;j<8;j++)
 				{	
-					if(!mode)//非叠加方式
+					if(!mode)//路脟碌镁录脫路陆脢陆
 					{
 						if(tfont16[k].Msk[i]&(0x01<<j))LCD_WR_DATA(fc);
 						else LCD_WR_DATA(bc);
@@ -376,9 +376,9 @@ void LCD_ShowChinese16x16(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 							break;
 						}
 					}
-					else//叠加方式
+					else//碌镁录脫路陆脢陆
 					{
-						if(tfont16[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//画一个点
+						if(tfont16[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//禄颅脪禄赂枚碌茫
 						x++;
 						if((x-x0)==sizey)
 						{
@@ -390,31 +390,31 @@ void LCD_ShowChinese16x16(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 				}
 			}
 		}				  	
-		continue;  //查找到对应点阵字库立即退出，防止多个汉字重复取模带来影响
+		continue;  //虏茅脮脪碌陆露脭脫娄碌茫脮贸脳脰驴芒脕垄录麓脥脣鲁枚拢卢路脌脰鹿露脿赂枚潞潞脳脰脰脴赂麓脠隆脛拢麓酶脌麓脫掳脧矛
 	}
 } 
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChinese24x24: 在LCD上显示24x24汉字
-* @param:      	x, y - 起始坐标，显示汉字的左上角坐标
-*              	s - 要显示的汉字，每个汉字占两个字节
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 汉字字体大小，支持24x24
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChinese24x24: 脭脷LCD脡脧脧脭脢戮24x24潞潞脳脰
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮潞潞脳脰碌脛脳贸脡脧陆脟脳酶卤锚
+*              	s - 脪陋脧脭脢戮碌脛潞潞脳脰拢卢脙驴赂枚潞潞脳脰脮录脕陆赂枚脳脰陆脷
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 潞潞脳脰脳脰脤氓麓贸脨隆拢卢脰搂鲁脰24x24
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示24x24汉字，可以选择显示模式。
+* @details:    	脭脷LCD脡脧脧脭脢戮24x24潞潞脳脰拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆隆拢
 ************************************************************************
 **/
 void LCD_ShowChinese24x24(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t i,j,m=0;
 	uint16_t k;
-	uint16_t HZnum;//汉字数目
-	uint16_t TypefaceNum;//一个字符所占字节大小
+	uint16_t HZnum;//潞潞脳脰脢媒脛驴
+	uint16_t TypefaceNum;//脪禄赂枚脳脰路没脣霉脮录脳脰陆脷麓贸脨隆
 	uint16_t x0=x;
 	TypefaceNum=(sizey/8+((sizey%8)?1:0))*sizey;
-	HZnum=sizeof(tfont24)/sizeof(typFNT_GB24);	//统计汉字数目
+	HZnum=sizeof(tfont24)/sizeof(typFNT_GB24);	//脥鲁录脝潞潞脳脰脢媒脛驴
 	for(k=0;k<HZnum;k++) 
 	{
 		if ((tfont24[k].Index[0]==*(s))&&(tfont24[k].Index[1]==*(s+1)))
@@ -424,7 +424,7 @@ void LCD_ShowChinese24x24(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 			{
 				for(j=0;j<8;j++)
 				{	
-					if(!mode)//非叠加方式
+					if(!mode)//路脟碌镁录脫路陆脢陆
 					{
 						if(tfont24[k].Msk[i]&(0x01<<j))LCD_WR_DATA(fc);
 						else LCD_WR_DATA(bc);
@@ -435,9 +435,9 @@ void LCD_ShowChinese24x24(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 							break;
 						}
 					}
-					else//叠加方式
+					else//碌镁录脫路陆脢陆
 					{
-						if(tfont24[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//画一个点
+						if(tfont24[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//禄颅脪禄赂枚碌茫
 						x++;
 						if((x-x0)==sizey)
 						{
@@ -449,31 +449,31 @@ void LCD_ShowChinese24x24(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 				}
 			}
 		}				  	
-		continue;  //查找到对应点阵字库立即退出，防止多个汉字重复取模带来影响
+		continue;  //虏茅脮脪碌陆露脭脫娄碌茫脮贸脳脰驴芒脕垄录麓脥脣鲁枚拢卢路脌脰鹿露脿赂枚潞潞脳脰脰脴赂麓脠隆脛拢麓酶脌麓脫掳脧矛
 	}
 } 
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChinese32x32: 在LCD上显示32x32汉字
-* @param:      	x, y - 起始坐标，显示汉字的左上角坐标
-*              	s - 要显示的汉字，每个汉字占两个字节
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 汉字字体大小，支持32x32
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChinese32x32: 脭脷LCD脡脧脧脭脢戮32x32潞潞脳脰
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮潞潞脳脰碌脛脳贸脡脧陆脟脳酶卤锚
+*              	s - 脪陋脧脭脢戮碌脛潞潞脳脰拢卢脙驴赂枚潞潞脳脰脮录脕陆赂枚脳脰陆脷
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 潞潞脳脰脳脰脤氓麓贸脨隆拢卢脰搂鲁脰32x32
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示32x32汉字，可以选择显示模式。
+* @details:    	脭脷LCD脡脧脧脭脢戮32x32潞潞脳脰拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆隆拢
 ************************************************************************
 **/
 void LCD_ShowChinese32x32(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t i,j,m=0;
 	uint16_t k;
-	uint16_t HZnum;//汉字数目
-	uint16_t TypefaceNum;//一个字符所占字节大小
+	uint16_t HZnum;//潞潞脳脰脢媒脛驴
+	uint16_t TypefaceNum;//脪禄赂枚脳脰路没脣霉脮录脳脰陆脷麓贸脨隆
 	uint16_t x0=x;
 	TypefaceNum=(sizey/8+((sizey%8)?1:0))*sizey;
-	HZnum=sizeof(tfont32)/sizeof(typFNT_GB32);	//统计汉字数目
+	HZnum=sizeof(tfont32)/sizeof(typFNT_GB32);	//脥鲁录脝潞潞脳脰脢媒脛驴
 	for(k=0;k<HZnum;k++) 
 	{
 		if ((tfont32[k].Index[0]==*(s))&&(tfont32[k].Index[1]==*(s+1)))
@@ -483,7 +483,7 @@ void LCD_ShowChinese32x32(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 			{
 				for(j=0;j<8;j++)
 				{	
-					if(!mode)//非叠加方式
+					if(!mode)//路脟碌镁录脫路陆脢陆
 					{
 						if(tfont32[k].Msk[i]&(0x01<<j))LCD_WR_DATA(fc);
 						else LCD_WR_DATA(bc);
@@ -494,9 +494,9 @@ void LCD_ShowChinese32x32(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 							break;
 						}
 					}
-					else//叠加方式
+					else//碌镁录脫路陆脢陆
 					{
-						if(tfont32[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//画一个点
+						if(tfont32[k].Msk[i]&(0x01<<j))	LCD_DrawPoint(x,y,fc);//禄颅脪禄赂枚碌茫
 						x++;
 						if((x-x0)==sizey)
 						{
@@ -508,41 +508,41 @@ void LCD_ShowChinese32x32(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 				}
 			}
 		}				  	
-		continue;  //查找到对应点阵字库立即退出，防止多个汉字重复取模带来影响
+		continue;  //虏茅脮脪碌陆露脭脫娄碌茫脮贸脳脰驴芒脕垄录麓脥脣鲁枚拢卢路脌脰鹿露脿赂枚潞潞脳脰脰脴赂麓脠隆脛拢麓酶脌麓脫掳脧矛
 	}
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowChar: 在LCD上显示单个字符
-* @param:      	x, y - 起始坐标，显示字符的左上角坐标
-*              	num - 要显示的字符的ASCII码值
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小，支持12x6, 16x8, 24x12, 32x16
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowChar: 脭脷LCD脡脧脧脭脢戮碌楼赂枚脳脰路没
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮脳脰路没碌脛脳贸脡脧陆脟脳酶卤锚
+*              	num - 脪陋脧脭脢戮碌脛脳脰路没碌脛ASCII脗毛脰碌
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆拢卢脰搂鲁脰12x6, 16x8, 24x12, 32x16
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示单个字符，可以选择显示模式和不同的字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮碌楼赂枚脳脰路没拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆潞脥虏禄脥卢碌脛脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowChar(uint16_t x,uint16_t y,uint8_t num,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t temp,sizex,t,m=0;
-	uint16_t i,TypefaceNum;//一个字符所占字节大小
+	uint16_t i,TypefaceNum;//脪禄赂枚脳脰路没脣霉脮录脳脰陆脷麓贸脨隆
 	uint16_t x0=x;
 	sizex=sizey/2;
 	TypefaceNum=(sizex/8+((sizex%8)?1:0))*sizey;
-	num=num-' ';    //得到偏移后的值
-	LCD_Address_Set(x,y,x+sizex-1,y+sizey-1);  //设置光标位置 
+	num=num-' ';    //碌脙碌陆脝芦脪脝潞贸碌脛脰碌
+	LCD_Address_Set(x,y,x+sizex-1,y+sizey-1);  //脡猫脰脙鹿芒卤锚脦禄脰脙 
 	for(i=0;i<TypefaceNum;i++)
 	{ 
-		if(sizey==12)temp=ascii_1206[num][i];		       //调用6x12字体
-		else if(sizey==16)temp=ascii_1608[num][i];		 //调用8x16字体
-		else if(sizey==24)temp=ascii_2412[num][i];		 //调用12x24字体
-		else if(sizey==32)temp=ascii_3216[num][i];		 //调用16x32字体
+		if(sizey==12)temp=ascii_1206[num][i];		       //碌梅脫脙6x12脳脰脤氓
+		else if(sizey==16)temp=ascii_1608[num][i];		 //碌梅脫脙8x16脳脰脤氓
+		else if(sizey==24)temp=ascii_2412[num][i];		 //碌梅脫脙12x24脳脰脤氓
+		else if(sizey==32)temp=ascii_3216[num][i];		 //碌梅脫脙16x32脳脰脤氓
 		else return;
 		for(t=0;t<8;t++)
 		{
-			if(!mode)//非叠加模式
+			if(!mode)//路脟碌镁录脫脛拢脢陆
 			{
 				if(temp&(0x01<<t))LCD_WR_DATA(fc);
 				else LCD_WR_DATA(bc);
@@ -553,9 +553,9 @@ void LCD_ShowChar(uint16_t x,uint16_t y,uint8_t num,uint16_t fc,uint16_t bc,uint
 					break;
 				}
 			}
-			else//叠加模式
+			else//碌镁录脫脛拢脢陆
 			{
-				if(temp&(0x01<<t))LCD_DrawPoint(x,y,fc);//画一个点
+				if(temp&(0x01<<t))LCD_DrawPoint(x,y,fc);//禄颅脪禄赂枚碌茫
 				x++;
 				if((x-x0)==sizex)
 				{
@@ -569,15 +569,15 @@ void LCD_ShowChar(uint16_t x,uint16_t y,uint8_t num,uint16_t fc,uint16_t bc,uint
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowString: 在LCD上显示字符串
-* @param:      	x, y - 起始坐标，显示字符串的左上角坐标
-*              	p - 要显示的字符串，以'\0'结尾
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小，支持12x6, 16x8, 24x12, 32x16
-*              	mode - 显示模式，1表示反色，0表示正常显示
+* @brief:      	LCD_ShowString: 脭脷LCD脡脧脧脭脢戮脳脰路没麓庐
+* @param:      	x, y - 脝冒脢录脳酶卤锚拢卢脧脭脢戮脳脰路没麓庐碌脛脳贸脡脧陆脟脳酶卤锚
+*              	p - 脪陋脧脭脢戮碌脛脳脰路没麓庐拢卢脪脭'\0'陆谩脦虏
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆拢卢脰搂鲁脰12x6, 16x8, 24x12, 32x16
+*              	mode - 脧脭脢戮脛拢脢陆拢卢1卤铆脢戮路麓脡芦拢卢0卤铆脢戮脮媒鲁拢脧脭脢戮
 * @retval:     	void
-* @details:    	在LCD上显示字符串，可以选择显示模式和不同的字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮脳脰路没麓庐拢卢驴脡脪脭脩隆脭帽脧脭脢戮脛拢脢陆潞脥虏禄脥卢碌脛脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowString(uint16_t x,uint16_t y,const uint8_t *p,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
@@ -591,11 +591,11 @@ void LCD_ShowString(uint16_t x,uint16_t y,const uint8_t *p,uint16_t fc,uint16_t 
 }
 /**
 ************************************************************************
-* @brief:      	mypow: 计算m的n次方
-* @param:      	m - 底数
-*              	n - 指数
-* @retval:     	uint32_t - m的n次方
-* @details:    	计算m的n次方，返回结果。
+* @brief:      	mypow: 录脝脣茫m碌脛n麓脦路陆
+* @param:      	m - 碌脳脢媒
+*              	n - 脰赂脢媒
+* @retval:     	uint32_t - m碌脛n麓脦路陆
+* @details:    	录脝脣茫m碌脛n麓脦路陆拢卢路碌禄脴陆谩鹿没隆拢
 ************************************************************************
 **/
 uint32_t mypow(uint8_t m,uint8_t n)
@@ -606,16 +606,16 @@ uint32_t mypow(uint8_t m,uint8_t n)
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowIntNum: 在LCD上显示整数数字
-* @param:      	x - x坐标
-*              	y - y坐标
-*              	num - 要显示的整数
-*              	len - 数字显示的位数
-*              	fc - 字体颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小
+* @brief:      	LCD_ShowIntNum: 脭脷LCD脡脧脧脭脢戮脮没脢媒脢媒脳脰
+* @param:      	x - x脳酶卤锚
+*              	y - y脳酶卤锚
+*              	num - 脪陋脧脭脢戮碌脛脮没脢媒
+*              	len - 脢媒脳脰脧脭脢戮碌脛脦禄脢媒
+*              	fc - 脳脰脤氓脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆
 * @retval:     	void
-* @details:    	在LCD上显示整数数字，支持设置显示的位数、字体颜色、背景颜色和字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮脮没脢媒脢媒脳脰拢卢脰搂鲁脰脡猫脰脙脧脭脢戮碌脛脦禄脢媒隆垄脳脰脤氓脩脮脡芦隆垄卤鲁戮掳脩脮脡芦潞脥脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowIntNum(uint16_t x,uint16_t y,uint16_t num,uint8_t len,uint16_t fc,uint16_t bc,uint8_t sizey)
@@ -640,17 +640,17 @@ void LCD_ShowIntNum(uint16_t x,uint16_t y,uint16_t num,uint8_t len,uint16_t fc,u
 } 
 /**
 ************************************************************************
-* @brief:      	LCD_ShowFloatNum: 在LCD上显示格式化的浮点数，支持负数
-* @param:      	x - x坐标
-*              	y - y坐标
-*              	num - 要显示的浮点数
-*              	len - 整数位数
-*              	decimal - 小数位数
-*              	fc - 字的颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小
+* @brief:      	LCD_ShowFloatNum: 脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢脰搂鲁脰赂潞脢媒
+* @param:      	x - x脳酶卤锚
+*              	y - y脳酶卤锚
+*              	num - 脪陋脧脭脢戮碌脛赂隆碌茫脢媒
+*              	len - 脮没脢媒脦禄脢媒
+*              	decimal - 脨隆脢媒脦禄脢媒
+*              	fc - 脳脰碌脛脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆
 * @retval:     	void
-* @details:    	在LCD上显示格式化的浮点数，支持设置整数位数、小数位数、字体颜色、背景颜色和字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢脰搂鲁脰脡猫脰脙脮没脢媒脦禄脢媒隆垄脨隆脢媒脦禄脢媒隆垄脳脰脤氓脩脮脡芦隆垄卤鲁戮掳脩脮脡芦潞脥脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowFloatNum(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t decimal, uint16_t fc, uint16_t bc, uint8_t sizey)
@@ -675,7 +675,7 @@ void LCD_ShowFloatNum(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t de
         len++;
     }
 
-    // 在更新数字时刷新显示的位置
+    // 脭脷赂眉脨脗脢媒脳脰脢卤脣垄脨脗脧脭脢戮碌脛脦禄脰脙
     LCD_Fill(x, y, x + len * sizex + decimal + 1, y + sizey + 1, bc);
 
     for (t = 0; t < len; t++)
@@ -692,17 +692,17 @@ void LCD_ShowFloatNum(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t de
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowFloatNum1: 在LCD上显示格式化的浮点数，不支持负数
-* @param:      	x - x坐标
-*              	y - y坐标
-*              	num - 要显示的浮点数
-*              	len - 整数位数
-*              	decimal - 小数位数
-*              	fc - 字的颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小
+* @brief:      	LCD_ShowFloatNum1: 脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢虏禄脰搂鲁脰赂潞脢媒
+* @param:      	x - x脳酶卤锚
+*              	y - y脳酶卤锚
+*              	num - 脪陋脧脭脢戮碌脛赂隆碌茫脢媒
+*              	len - 脮没脢媒脦禄脢媒
+*              	decimal - 脨隆脢媒脦禄脢媒
+*              	fc - 脳脰碌脛脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆
 * @retval:     	void
-* @details:    	在LCD上显示格式化的浮点数，支持设置整数位数、小数位数、字体颜色、背景颜色和字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢脰搂鲁脰脡猫脰脙脮没脢媒脦禄脢媒隆垄脨隆脢媒脦禄脢媒隆垄脳脰脤氓脩脮脡芦隆垄卤鲁戮掳脩脮脡芦潞脥脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowFloatNum1(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t decimal, uint16_t fc, uint16_t bc, uint8_t sizey)
@@ -717,7 +717,7 @@ void LCD_ShowFloatNum1(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t d
 		x += sizex;
 		len++;
 
-    // 在更新数字时刷新显示的位置
+    // 脭脷赂眉脨脗脢媒脳脰脢卤脣垄脨脗脧脭脢戮碌脛脦禄脰脙
     LCD_Fill(x, y, x + len * sizex + decimal + 1, y + sizey + 1, bc);
 
     for (t = 0; t < len; t++)
@@ -734,17 +734,17 @@ void LCD_ShowFloatNum1(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t d
 }
 /**
 ************************************************************************
-* @brief:      	LCD_ShowFloatNum1: 在LCD上显示格式化的浮点数，不支持负数
-* @param:      	x - x坐标
-*              	y - y坐标
-*              	num - 要显示的浮点数
-*              	len - 整数位数
-*              	decimal - 小数位数
-*              	fc - 字的颜色
-*              	bc - 背景颜色
-*              	sizey - 字体大小
+* @brief:      	LCD_ShowFloatNum1: 脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢虏禄脰搂鲁脰赂潞脢媒
+* @param:      	x - x脳酶卤锚
+*              	y - y脳酶卤锚
+*              	num - 脪陋脧脭脢戮碌脛赂隆碌茫脢媒
+*              	len - 脮没脢媒脦禄脢媒
+*              	decimal - 脨隆脢媒脦禄脢媒
+*              	fc - 脳脰碌脛脩脮脡芦
+*              	bc - 卤鲁戮掳脩脮脡芦
+*              	sizey - 脳脰脤氓麓贸脨隆
 * @retval:     	void
-* @details:    	在LCD上显示格式化的浮点数，支持设置整数位数、小数位数、字体颜色、背景颜色和字体大小。
+* @details:    	脭脷LCD脡脧脧脭脢戮赂帽脢陆禄炉碌脛赂隆碌茫脢媒拢卢脰搂鲁脰脡猫脰脙脮没脢媒脦禄脢媒隆垄脨隆脢媒脦禄脢媒隆垄脳脰脤氓脩脮脡芦隆垄卤鲁戮掳脩脮脡芦潞脥脳脰脤氓麓贸脨隆隆拢
 ************************************************************************
 **/
 void LCD_ShowPicture(uint16_t x,uint16_t y,uint16_t length,uint16_t width,const uint8_t pic[])
@@ -764,21 +764,21 @@ void LCD_ShowPicture(uint16_t x,uint16_t y,uint16_t length,uint16_t width,const 
 }
 /**
 ************************************************************************
-* @brief:      	LCD_Init: LCD初始化函数
+* @brief:      	LCD_Init: LCD鲁玫脢录禄炉潞炉脢媒
 * @param:      	void
-* @details:    	执行LCD的初始化过程，包括复位、背光控制、寄存器配置等
+* @details:    	脰麓脨脨LCD碌脛鲁玫脢录禄炉鹿媒鲁脤拢卢掳眉脌篓赂麓脦禄隆垄卤鲁鹿芒驴脴脰脝隆垄录脛麓忙脝梅脜盲脰脙碌脠
 * @retval:     	void
 ************************************************************************
 **/
 void LCD_Init(void)
 {
 	
-	LCD_RES_Clr();//复位
+	LCD_RES_Clr();//赂麓脦禄
 	HAL_Delay(100);
 	LCD_RES_Set();
 	HAL_Delay(100);
 	
-	LCD_BLK_Set();//打开背光
+	LCD_BLK_Set();//麓貌驴陋卤鲁鹿芒
   HAL_Delay(100);
 	
 	//************* Start Initial Sequence **********//
@@ -811,7 +811,7 @@ void LCD_Init(void)
 	LCD_WR_DATA8(0x01);
 
 	LCD_WR_REG(0xC3);			
-	LCD_WR_DATA8(0x15); //GVDD=4.8V  颜色深度
+	LCD_WR_DATA8(0x15); //GVDD=4.8V  脩脮脡芦脡卯露脠
 				
 	LCD_WR_REG(0xC4);			
 	LCD_WR_DATA8(0x20); //VDV, 0x20:0v

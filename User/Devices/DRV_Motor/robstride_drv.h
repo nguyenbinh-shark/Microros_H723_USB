@@ -76,15 +76,19 @@
 /* Classic 11-bit Feedback structure */
 typedef struct
 {
-    uint8_t  id;      /* Motor CAN ID from feedback byte0 */
-    uint8_t  state;   /* Not provided in MIT feedback; kept for compatibility */
+    uint8_t  id;          /* Motor CAN ID from feedback byte0 */
+    uint8_t  state;       /* Not provided in MIT feedback; kept for compatibility */
     uint16_t p_raw;
     uint16_t v_raw;
     uint16_t t_raw;
-    float    pos;     /* rad */
-    float    vel;     /* rad/s */
-    float    tor;     /* Nm */
-    float    temp;    /* degC, from bytes6-7 / 10 */
+    float    pos_raw;     /* Single-turn raw position rad [-4π, 4π] */
+    float    pos;         /* Continuous multi-turn accumulated angle rad */
+    float    last_raw_pos;/* Last received raw position for delta */
+    int32_t  round_cnt;   /* Number of full multi-turn wraps */
+    uint8_t  init_done;   /* 1 = First sample initialized */
+    float    vel;         /* rad/s */
+    float    tor;         /* Nm */
+    float    temp;        /* degC, from bytes6-7 / 10 */
 } rs_fb_t;
 
 /* 29-bit Extended CAN Feedback structure */
@@ -94,7 +98,11 @@ typedef struct
     uint8_t  master_id;   /* Host CAN ID (Bit 7..0 of CAN ID) */
     uint8_t  mode_stat;   /* 0: Reset, 1: Cali, 2: Run */
     uint8_t  fault_code;  /* Bitfield of motor faults */
-    float    pos;         /* rad [-4π, 4π] */
+    float    pos_raw;     /* Single-turn raw position rad [-4π, 4π] */
+    float    pos;         /* Continuous multi-turn accumulated angle rad */
+    float    last_raw_pos;/* Last received raw position for delta */
+    int32_t  round_cnt;   /* Number of full multi-turn wraps */
+    uint8_t  init_done;   /* 1 = First sample initialized */
     float    vel;         /* rad/s [-20, 20] */
     float    tor;         /* Nm [-60, 60] */
     float    temp;        /* °C */

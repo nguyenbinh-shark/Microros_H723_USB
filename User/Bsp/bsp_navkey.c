@@ -1,7 +1,7 @@
 #include "bsp_navkey.h"
 #include <stdio.h>
 
-ADC_HandleTypeDef hadc1;
+extern ADC_HandleTypeDef hadc1;   /* owned by Core/Src/adc.c */
 
 static uint16_t s_last_adc_val = 0;
 static NavKey_t s_last_key = NAV_KEY_NONE;
@@ -12,22 +12,14 @@ void NavKey_Init(void)
     ADC_MultiModeTypeDef multimode = {0};
     ADC_ChannelConfTypeDef sConfig = {0};
     GPIO_InitTypeDef GPIO_InitStruct = {0};
-    RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
 
-    /* 1. Configure ADC Clock via PLL2 */
-    PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_ADC;
-    PeriphClkInitStruct.PLL2.PLL2M = 2;
-    PeriphClkInitStruct.PLL2.PLL2N = 16;
-    PeriphClkInitStruct.PLL2.PLL2P = 2;
-    PeriphClkInitStruct.PLL2.PLL2Q = 2;
-    PeriphClkInitStruct.PLL2.PLL2R = 2;
-    PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
-    PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOWIDE;
-    PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
-    PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
-    (void)HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct);
+    /* The ADC kernel clock is already selected in PeriphCommonClock_Config().
+       It must NOT be reconfigured here: naming PLL2 as the ADC source makes
+       HAL_RCCEx_PeriphCLKConfig() stop and reprogram PLL2, and PLL2Q is the
+       FDCAN kernel clock. Doing so drags the CAN bit rate off 1 Mbit/s and the
+       motors stop acknowledging every frame. */
 
-    /* 2. Clock & GPIO Enable */
+    /* 1. Clock & GPIO Enable */
     __HAL_RCC_ADC12_CLK_ENABLE();
     __HAL_RCC_GPIOA_CLK_ENABLE();
 

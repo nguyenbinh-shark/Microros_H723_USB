@@ -24,11 +24,17 @@ void DWT_Init(uint32_t CPU_Freq_mHz)
     /* Enable DWT tracing unit */
     CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
 
+    /* Cortex-M7 DWT Lock Access Register unlock */
+    DWT->LAR = 0xC5ACCE55;
+
     /* Clear DWT CYCCNT register */
     DWT->CYCCNT = (uint32_t)0u;
 
     /* Enable Cortex-M DWT CYCCNT counter */
     DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    /* Ensure SWO/TRACE clock is disabled so PB3 remains dedicated to SPI1_SCK */
+    DBGMCU->CR &= ~(DBGMCU_CR_DBG_TRACECKEN);
 
     CPU_FREQ_Hz = CPU_Freq_mHz * 1000000;
     CPU_FREQ_Hz_ms = CPU_FREQ_Hz / 1000;
