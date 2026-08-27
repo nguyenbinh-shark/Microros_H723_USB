@@ -1,11 +1,26 @@
-# Build output
+# ==============================================================================
+# Build & Compilation Outputs
+# ==============================================================================
 build/
+*.o
+*.d
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.axf
+*.srec
 
-# micro-ROS prebuilt library (fetch via tools/fetch_libmicroros.sh or build via tools/build_libmicroros.sh)
+# ==============================================================================
+# micro-ROS Prebuilt Static Libraries (Fetched via tools/fetch_libmicroros.sh)
+# ==============================================================================
 micro_ros_stm32cubemx_utils/microros_static_library/libmicroros/
 micro_ros_stm32cubemx_utils/microros_static_library_ide/libmicroros/
 
-# CMSIS DSP - ignore all prebuilt libs except the linked Cortex-M7 lib
+# ==============================================================================
+# CMSIS DSP - Ignore unused sources & prebuilt libs (Keep Cortex-M7 DSP library)
+# ==============================================================================
 Drivers/CMSIS/DSP/Lib/*
 !Drivers/CMSIS/DSP/Lib/GCC/
 Drivers/CMSIS/DSP/Lib/GCC/*
@@ -15,39 +30,108 @@ Drivers/CMSIS/DSP/DSP_Lib_TestSuite/
 Drivers/CMSIS/DSP/PythonWrapper/
 Drivers/CMSIS/DSP/Source/
 
-# CMSIS NN (not used)
+# CMSIS NN (Not used)
 Drivers/CMSIS/NN/
 
-# CMSIS Device unused sources and non-H723 headers
+# CMSIS Device Unused Sources & Non-H723 MCU Headers
 Drivers/CMSIS/Device/ST/STM32H7xx/Source/
 Drivers/CMSIS/Device/ST/STM32H7xx/Include/*
 !Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h723xx.h
 !Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h7xx.h
 !Drivers/CMSIS/Device/ST/STM32H7xx/Include/system_stm32h7xx.h
 
-# Keil build artifacts
+# ==============================================================================
+# Keil MDK / IAR EWARM Artifacts
+# ==============================================================================
 MDK-ARM/*.uvguix.*
+MDK-ARM/*.uvoptx
 MDK-ARM/DebugConfig/
 MDK-ARM/Listings/
 MDK-ARM/Objects/
+*.uvguix.*
+*.uvoptx
+*.uvgui.*
 *.dep
-*.map
+*.crf
+*.eww
+*.ewp
+*.ewd
+*.browse
 
-# STM32CubeIDE / CubeMX
+# ==============================================================================
+# STM32CubeIDE / Eclipse / CubeMX
+# ==============================================================================
 .settings/
 .cproject
 .project
 .mxproject
+.metadata/
 Debug/
 Release/
+*.launch
 
-# IDE & Editor
+# ==============================================================================
+# IDEs & Text Editors Personal Configurations
+# ==============================================================================
 .vscode/
-.claude/
+.idea/
+.fleet/
 *.code-workspace
-__pycache__/
-*.pyc
+*.sublime-project
+*.sublime-workspace
+*.session
 
-# OS
-Thumbs.db
+# ==============================================================================
+# AI Assistants, Agents & Local Tool Data
+# ==============================================================================
+.claude/
+.gemini/
+.cursor/
+.windsurf/
+.copilot/
+.aider*
+
+# ==============================================================================
+# Python Artifacts & Virtual Environments
+# ==============================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+ENV/
+
+# ==============================================================================
+# Operating System & File System Metadata
+# ==============================================================================
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# ==============================================================================
+# Temporary Files, Logs & Local Environment
+# ==============================================================================
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+*.orig
+*.rej
+*.log
+*.jlink
+JLinkLog.txt
+.env
+.env.*
+!.env.example
