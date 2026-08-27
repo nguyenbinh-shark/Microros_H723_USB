@@ -1,7 +1,8 @@
 #include "can_bsp.h"
 #include "fdcan.h"
 #include "robstride_drv.h"
-#include "string.h"
+#include <string.h>
+#include <stdio.h>
 
 /* ── RX buffers ──────────────────────────────────────────────────── */
 FDCAN_RxHeaderTypeDef RxHeader1;
