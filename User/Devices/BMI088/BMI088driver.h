@@ -44,13 +44,13 @@
 #define BMI088_GYRO_250_SEN 0.00013315805450396191230191732547673f
 #define BMI088_GYRO_125_SEN 0.000066579027251980956150958662738366f
 
-// ĞèÊÖ¶¯ĞŞ¸Ä
+// éœ€æ‰‹åŠ¨ä¿®æ”¹
 #define GxOFFSET -0.000681414269f
 #define GyOFFSET -0.00134240754f
 #define GzOFFSET -0.00143384014f
 #define AxOFFSET 0.299675316f
 #define AyOFFSET 0.0720675737f
-#define AzOFFSET 0.0f//ZÖáÏÈ²»¼õÈ¥ÁãÆ®Öµ£¬ÒòÎªÁãÆ®Öµ°üº¬ÖØÁ¦¼ÓËÙ¶ÈµÄÖµ
+#define AzOFFSET 0.0f//Zè½´å…ˆä¸å‡å»é›¶é£˜å€¼ï¼Œå› ä¸ºé›¶é£˜å€¼åŒ…å«é‡åŠ›åŠ é€Ÿåº¦çš„å€¼
 #define gNORM 9.84484291f
 
 
