@@ -10,7 +10,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 VERSION="v1.0.0"
 TARBALL_NAME="libmicroros-jazzy-stm32h723-${VERSION}.tar.gz"
-EXPECTED_SHA256="3c4773d7baeead01defede2536e031c8b87c185da0860f0021021899b4db66bc"
+EXPECTED_SHA256="3c7bb1a21d20712d59f175ecae2c0d10d36e7d583eb020df97b67aa585f4ab6b"
 RELEASE_URL="https://github.com/nguyenbinh-shark/Microros_H723_USB/releases/download/${VERSION}/${TARBALL_NAME}"
 
 DEST_DIR="${PROJECT_ROOT}/micro_ros_stm32cubemx_utils/microros_static_library"
@@ -18,16 +18,21 @@ TARGET_LIB="${DEST_DIR}/libmicroros/libmicroros.a"
 
 if [ -f "${TARGET_LIB}" ]; then
     echo "[INFO] micro-ROS library already present at: ${TARGET_LIB}"
-    read -r -p "Do you want to re-download and overwrite? [y/N] " response || response="N"
-    case "$response" in
-        [yY][eE][sS]|[yY])
-            echo "[INFO] Proceeding to overwrite..."
-            ;;
-        *)
-            echo "[INFO] Skipping download. Existing library kept."
-            exit 0
-            ;;
-    esac
+    if [ -t 0 ]; then
+        read -r -p "Do you want to re-download and overwrite? [y/N] " response || response="N"
+        case "$response" in
+            [yY][eE][sS]|[yY])
+                echo "[INFO] Proceeding to overwrite..."
+                ;;
+            *)
+                echo "[INFO] Skipping download. Existing library kept."
+                exit 0
+                ;;
+        esac
+    else
+        echo "[INFO] Non-interactive environment detected. Keeping existing library."
+        exit 0
+    fi
 fi
 
 mkdir -p "${DEST_DIR}"

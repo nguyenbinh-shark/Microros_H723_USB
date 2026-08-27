@@ -61,14 +61,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: micro_ros_stm32cubemx_utils/microros_static_library/libmicroros
-          key: microros-jazzy-stm32h723-v1.0.0-3c4773d7baeead01defede2536e031c8b87c185da0860f0021021899b4db66bc
+          key: microros-jazzy-stm32h723-v1.0.0-3c7bb1a21d20712d59f175ecae2c0d10d36e7d583eb020df97b67aa585f4ab6b
 
       - name: Fetch micro-ROS Static Library
         if: steps.cache-microros.outputs.cache-hit != 'true'
         run: |
           chmod +x tools/*.sh
-          # Note: If GitHub release asset is not yet created, download will fail unless cached or uploaded
-          ./tools/fetch_libmicroros.sh || echo "[WARN] Release asset pending upload. If on self-hosted or cache, build continues."
+          ./tools/fetch_libmicroros.sh
 
       - name: Compile Firmware
         run: |

@@ -17,6 +17,7 @@ build/
 # ==============================================================================
 micro_ros_stm32cubemx_utils/microros_static_library/libmicroros/
 micro_ros_stm32cubemx_utils/microros_static_library_ide/libmicroros/
+*.tar.gz
 
 # ==============================================================================
 # CMSIS DSP - Ignore unused sources & prebuilt libs (Keep Cortex-M7 DSP library)
