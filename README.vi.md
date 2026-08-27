@@ -1,4 +1,4 @@
-# Bộ Điều Khiển Robot Vi Sai micro-ROS trên STM32H723
+# Microros_H723_USB — Bộ Điều Khiển Robot Vi Sai micro-ROS trên STM32H723
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![ROS 2: Jazzy](https://img.shields.io/badge/ROS%202-Jazzy-blue.svg)](https://docs.ros.org/en/jazzy/)
@@ -89,8 +89,8 @@ graph TD
 
 ```bash
 # Clone repository
-git clone https://github.com/nguyenbinh-shark/ros_h7_usb.git
-cd ros_h7_usb
+git clone https://github.com/nguyenbinh-shark/Microros_H723_USB.git
+cd Microros_H723_USB
 
 # Tải thư viện tĩnh micro-ROS dựng sẵn
 ./tools/fetch_libmicroros.sh

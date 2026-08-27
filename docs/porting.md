@@ -6,7 +6,7 @@ This guide explains how to adapt the firmware for different robot dimensions, ge
 
 ## 1. Central Robot Configuration (`robot_config.h`)
 
-All core geometric parameters and hardware tuning gains are defined in [`User/Config/robot_config.h`](file:///p:/Prj_STM32/ros_h7_usb/User/Config/robot_config.h):
+All core geometric parameters and hardware tuning gains are defined in [`User/Config/robot_config.h`](../User/Config/robot_config.h):
 
 ```c
 /* ── Geometric Parameters ───────────────────────────────────────────── */
@@ -46,7 +46,7 @@ All core geometric parameters and hardware tuning gains are defined in [`User/Co
 If you choose to operate both motors on a shared single CAN bus:
 1. Connect each motor individually to a USB-to-CAN adapter.
 2. Use the manufacturer host tool to configure Motor 1 to ID `0x01` and Motor 2 to ID `0x02`.
-3. In [`User/APP/motor_task.c`](file:///p:/Prj_STM32/ros_h7_usb/User/APP/motor_task.c), update the motor ID macros:
+3. In [`User/APP/motor_task.c`](../User/APP/motor_task.c), update the motor ID macros:
    ```c
    #define MOTOR_ID_LEFT   1U
    #define MOTOR_ID_RIGHT  2U
@@ -56,7 +56,7 @@ If you choose to operate both motors on a shared single CAN bus:
 
 ## 3. Adapting to Other Actuators via `motor_drv` Layer
 
-The firmware isolates motor-specific communication inside [`User/Devices/DRV_Motor/motor_drv.c`](file:///p:/Prj_STM32/ros_h7_usb/User/Devices/DRV_Motor/motor_drv.c). To support another motor protocol (such as DJI RoboMaster M3508/GM6020 or Unitree A1 actuators):
+The firmware isolates motor-specific communication inside [`User/Devices/DRV_Motor/motor_drv.c`](../User/Devices/DRV_Motor/motor_drv.c). To support another motor protocol (such as DJI RoboMaster M3508/GM6020 or Unitree A1 actuators):
 
 1. Implement your motor protocol driver under `User/Devices/DRV_Motor/`.
 2. Map the generic callbacks in `motor_drv.c`:

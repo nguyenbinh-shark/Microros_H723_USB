@@ -1,4 +1,4 @@
-# STM32H723 micro-ROS Differential-Drive Robot Controller
+# Microros_H723_USB — STM32H723 micro-ROS Differential Robot Controller
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![ROS 2: Jazzy](https://img.shields.io/badge/ROS%202-Jazzy-blue.svg)](https://docs.ros.org/en/jazzy/)
@@ -89,8 +89,8 @@ graph TD
 
 ```bash
 # Clone the repository
-git clone https://github.com/nguyenbinh-shark/ros_h7_usb.git
-cd ros_h7_usb
+git clone https://github.com/nguyenbinh-shark/Microros_H723_USB.git
+cd Microros_H723_USB
 
 # Fetch the prebuilt micro-ROS static library
 ./tools/fetch_libmicroros.sh
@@ -142,7 +142,7 @@ Detailed guides are available in the [`docs/`](docs/) directory:
 ## 🛠️ Repository Layout
 
 ```text
-ros_h7_usb/
+Microros_H723_USB/
 ├── Core/               # CubeMX initialization & FreeRTOS/micro-ROS task integration
 ├── Drivers/            # ST HAL Drivers, ARM CMSIS Core & CMSIS-DSP
 ├── Middlewares/        # FreeRTOS kernel & ST USB Device stack

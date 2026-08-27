@@ -1,6 +1,6 @@
 # Notices and Open Source Attribution
 
-This project (`ros_h7_usb`) is licensed under the **MIT License** for all custom firmware code, integration logic, deployment scripts, and documentation written by the repository maintainer (Tran Nguyen Binh).
+This project (`Microros_H723_USB`) is licensed under the **MIT License** for all custom firmware code, integration logic, deployment scripts, and documentation written by the repository maintainer (Tran Nguyen Binh).
 
 This repository contains and builds upon third-party open-source components and vendor libraries. Their respective licenses, copyrights, and attributions are detailed below.
 

@@ -11,7 +11,7 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VERSION="v1.0.0"
 TARBALL_NAME="libmicroros-jazzy-stm32h723-${VERSION}.tar.gz"
 EXPECTED_SHA256="3c4773d7baeead01defede2536e031c8b87c185da0860f0021021899b4db66bc"
-RELEASE_URL="https://github.com/nguyenbinh-shark/ros_h7_usb/releases/download/${VERSION}/${TARBALL_NAME}"
+RELEASE_URL="https://github.com/nguyenbinh-shark/Microros_H723_USB/releases/download/${VERSION}/${TARBALL_NAME}"
 
 DEST_DIR="${PROJECT_ROOT}/micro_ros_stm32cubemx_utils/microros_static_library"
 TARGET_LIB="${DEST_DIR}/libmicroros/libmicroros.a"

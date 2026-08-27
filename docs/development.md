@@ -31,7 +31,7 @@ The firmware runs five concurrent FreeRTOS tasks under CMSIS-RTOS v2 API:
 ## 2. Source Tree Layout
 
 ```text
-ros_h7_usb/
+Microros_H723_USB/
 ├── Core/
 │   ├── Inc/               # CubeMX generated peripheral headers & main.h
 │   └── Src/
