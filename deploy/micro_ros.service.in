@@ -1,0 +1,15 @@
+[Unit]
+Description=Micro-ROS Agent for STM32 Robot
+After=network.target
+
+[Service]
+Type=simple
+User=@USER@
+SupplementaryGroups=dialout
+# USB CDC ACM ignores baudrate parameter; using standard serial dev connection
+ExecStart=/bin/bash -c "source @ROS_SETUP@ && if [ -f @AGENT_WS@ ]; then source @AGENT_WS@; fi && exec ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm32_robot"
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
