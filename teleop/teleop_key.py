@@ -6,9 +6,9 @@ Publish geometry_msgs/Twist lên topic /cmd_vel. STM32 subscribe /cmd_vel
 (xem Core/Src/freertos.c::cmd_vel_callback) rồi đổi thành lệnh cho 2 động cơ.
 
 ═══════════════════════ LƯU Ý AN TOÀN ═══════════════════════
-Trong firmware hiện tại (motor_task.c, lỗi #4 chưa sửa), giá trị linear.x và
-angular.z được dùng TRỰC TIẾP làm MOMENT LỰC (Nm) — KHÔNG phải vận tốc (m/s).
-=> Đây thực chất là điều khiển moment hở (open-loop torque). Vì vậy:
+Firmware hiện tại đã hỗ trợ điều khiển vận tốc vòng kín (Closed-loop Velocity Control).
+Giá trị linear.x (m/s) và angular.z (rad/s) được quy đổi qua hệ động học vi sai (Kinematics)
+thành vận tốc góc cho 2 bánh.
    • Bắt đầu với step nhỏ (mặc định 0.05).
    • Có phím space để DỪNG ngay.
    • Có "deadman": tự gửi 0 (dừng) nếu bạn không nhấn phím trong --idle giây.
