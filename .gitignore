@@ -1,16 +1,29 @@
 # Build output
 build/
 
-# micro-ROS prebuilt library (rebuilt via Docker — see micro_ros_stm32cubemx_utils/README.md)
+# micro-ROS prebuilt library (fetch via tools/fetch_libmicroros.sh or build via tools/build_libmicroros.sh)
 micro_ros_stm32cubemx_utils/microros_static_library/libmicroros/
 micro_ros_stm32cubemx_utils/microros_static_library_ide/libmicroros/
 
-# CMSIS DSP prebuilt libraries (~164 MB, not linked by this project)
-# Project only uses DSP/Include headers (arm_math.h inline wrappers → libm)
-Drivers/CMSIS/DSP/Lib/
+# CMSIS DSP - ignore all prebuilt libs except the linked Cortex-M7 lib
+Drivers/CMSIS/DSP/Lib/*
+!Drivers/CMSIS/DSP/Lib/GCC/
+Drivers/CMSIS/DSP/Lib/GCC/*
+!Drivers/CMSIS/DSP/Lib/GCC/libarm_cortexM7lfdp_math.a
 Drivers/CMSIS/DSP/Examples/
 Drivers/CMSIS/DSP/DSP_Lib_TestSuite/
 Drivers/CMSIS/DSP/PythonWrapper/
+Drivers/CMSIS/DSP/Source/
+
+# CMSIS NN (not used)
+Drivers/CMSIS/NN/
+
+# CMSIS Device unused sources and non-H723 headers
+Drivers/CMSIS/Device/ST/STM32H7xx/Source/
+Drivers/CMSIS/Device/ST/STM32H7xx/Include/*
+!Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h723xx.h
+!Drivers/CMSIS/Device/ST/STM32H7xx/Include/stm32h7xx.h
+!Drivers/CMSIS/Device/ST/STM32H7xx/Include/system_stm32h7xx.h
 
 # Keil build artifacts
 MDK-ARM/*.uvguix.*
@@ -20,18 +33,20 @@ MDK-ARM/Objects/
 *.dep
 *.map
 
-# STM32CubeIDE
+# STM32CubeIDE / CubeMX
 .settings/
 .cproject
 .project
+.mxproject
 Debug/
 Release/
 
-# VS Code
+# IDE & Editor
 .vscode/
-
-# Xiaomi_gear_ARM là project mẫu riêng, không thuộc repo này
-Xiaomi_gear_ARM/
+.claude/
+*.code-workspace
+__pycache__/
+*.pyc
 
 # OS
 Thumbs.db
