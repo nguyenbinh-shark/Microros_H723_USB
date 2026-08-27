@@ -104,3 +104,4 @@ This document describes the hardware specifications, Bill of Materials (BOM), wi
 | `LCD_DC` | `PD10` | LCD Data/Command Select |
 | `LCD_RES` | `PB11` | LCD Hardware Reset |
 | `LCD_BLK` | `PB10` | LCD Backlight Control |
+

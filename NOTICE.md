@@ -62,3 +62,4 @@ This repository contains and builds upon third-party open-source components and 
 ### ST7789 LCD Driver & Font Table
 - **Path:** `User/Devices/LCD/lcd.*`, `User/Devices/LCD/lcdfont.h`
 - **Notice:** Embedded display rendering routines for ST7789 SPI display controllers. Original attribution retained.
+

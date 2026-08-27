@@ -52,3 +52,4 @@ systemctl status micro_ros.service --no-pager || true
 echo "================================================"
 echo " HOAN TAT! Robot da o trang thai Plug & Play.   "
 echo "================================================"
+

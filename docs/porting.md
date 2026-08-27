@@ -68,3 +68,4 @@ The firmware isolates motor-specific communication inside [`User/Devices/DRV_Mot
    - Position: Continuous unwrapped radians ($\text{rad}$).
    - Velocity: Hub angular velocity ($\text{rad/s}$).
    - Effort: Output torque ($\text{Nm}$).
+

@@ -86,3 +86,4 @@ if [ ! -f "${TARGET_LIB}" ]; then
 fi
 
 echo "[SUCCESS] micro-ROS library installed successfully at ${DEST_DIR}/libmicroros"
+

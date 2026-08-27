@@ -89,3 +89,4 @@ Multi-turn angle unwrapping is handled in software (`rs_ext_parse_feedback`) by 
 For complete hardware datasheets and manufacturer-specific parameter tables:
 - RobStride Official Documentation & Software: [RobStride Manufacturer Site](https://www.robstride.com)
 - Xiaomi CyberGear Micro Motor User Manual: Public OEM Documentation & Protocols.
+

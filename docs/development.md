@@ -101,3 +101,4 @@ To debug using VS Code and ST-LINK / OpenOCD, use the following `.vscode/launch.
 
 ### Serial Printf Output
 - `printf()` is redirected to **UART7** (pin `PE8`) at **115200 baud, 8N1** in `Core/Src/usart.c` / `syscalls.c`.
+

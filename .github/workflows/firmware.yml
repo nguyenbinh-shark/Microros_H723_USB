@@ -87,3 +87,4 @@ jobs:
             build/microros_H7.elf
             build/microros_H7.bin
             build/microros_H7.hex
+

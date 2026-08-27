@@ -65,3 +65,4 @@ When CAN transmission issues occur, the firmware prints `[CAN_PHY]` diagnostics 
 - **Mailing / Logging Bug Reports:** When reporting issues, please include:
   1. Full UART7 boot banner and runtime logs.
   2. Output of `ros2 topic echo /motor_status`.
+

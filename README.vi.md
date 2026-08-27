@@ -142,3 +142,4 @@ Xem các hướng dẫn chuyên sâu trong thư mục [`docs/`](docs/):
 
 - Phần mềm nhúng, script triển khai và tài liệu do tác giả viết: [**MIT License**](LICENSE) © 2026 Trần Nguyễn Bình.
 - Các thành phần thư viện bên thứ ba (ST HAL, FreeRTOS, CMSIS, micro-ROS, v.v.) được ghi nhận chi tiết tại [**NOTICE.md**](NOTICE.md).
+

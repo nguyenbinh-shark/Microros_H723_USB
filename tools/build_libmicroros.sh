@@ -22,3 +22,4 @@ docker run -it --rm \
     microros/micro_ros_static_library_builder:jazzy
 
 echo "[SUCCESS] Build completed. Static library is in micro_ros_stm32cubemx_utils/microros_static_library/libmicroros"
+

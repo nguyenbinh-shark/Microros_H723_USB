@@ -107,3 +107,4 @@ $(BUILD_DIR)/$(TARGET).elf: $(OBJECTS) Makefile
 	$(CC) $(OBJECTS) $(LDFLAGS) micro_ros_stm32cubemx_utils/microros_static_library/libmicroros/libmicroros.a -o $@
 	$(SZ) $@
 ```
+
