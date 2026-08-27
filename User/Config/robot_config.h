@@ -30,7 +30,7 @@
  * (mirrored-mount motors face each other, one side is inverted)
  */
 #define MOTOR_LEFT_SIGN   ( 1.0f)  /* motor ID 1 — FDCAN1 */
-#define MOTOR_RIGHT_SIGN  (-1.0f)  /* motor ID 2 — FDCAN3 */
+#define MOTOR_RIGHT_SIGN  (-1.0f)  /* motor ID 1 — FDCAN3 (separate bus) */
 
 /* ── CAN transceiver enable pins (PC13 / PC14 / PC15) ───────────────── */
 
