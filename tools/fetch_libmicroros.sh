@@ -48,6 +48,13 @@ if [ -n "${LIBMICROROS_TARBALL:-}" ]; then
         exit 1
     fi
     ARCHIVE_PATH="${LIBMICROROS_TARBALL}"
+elif command -v gh >/dev/null 2>&1 && (gh auth status >/dev/null 2>&1 || [ -n "${GH_TOKEN:-${GITHUB_TOKEN:-}}" ]); then
+    echo "[INFO] Downloading ${TARBALL_NAME} via GitHub CLI from Release ${VERSION}..."
+    ARCHIVE_PATH="${TMP_DIR}/${TARBALL_NAME}"
+    GH_TOKEN="${GH_TOKEN:-${GITHUB_TOKEN:-}}" gh release download "${VERSION}" \
+        --repo "${GITHUB_REPOSITORY:-nguyenbinh-shark/Microros_H723_USB}" \
+        --pattern "${TARBALL_NAME}" \
+        --dir "${TMP_DIR}"
 else
     echo "[INFO] Downloading ${TARBALL_NAME} from GitHub Release ${VERSION}..."
     ARCHIVE_PATH="${TMP_DIR}/${TARBALL_NAME}"
@@ -56,7 +63,7 @@ else
     elif command -v wget >/dev/null 2>&1; then
         wget -q --show-progress -O "${ARCHIVE_PATH}" "${RELEASE_URL}"
     else
-        echo "[ERROR] Neither curl nor wget found. Please install either or set LIBMICROROS_TARBALL." >&2
+        echo "[ERROR] Neither gh, curl nor wget found. Please install either or set LIBMICROROS_TARBALL." >&2
         exit 1
     fi
 fi
