@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 typedef struct {
-    uint32_t cmd_rx_count;     /* Total /cmd_vel messages received */
+    uint32_t cmd_rx_count;     /* Total /cmd_vel + /cmd_mit messages received */
     uint32_t pub_tx_count;     /* Total /motor_fb messages published */
     uint32_t cmd_last_tick;    /* HAL_GetTick() when last cmd was received */
     uint32_t cmd_age_ms;       /* Time elapsed since last cmd (ms) */

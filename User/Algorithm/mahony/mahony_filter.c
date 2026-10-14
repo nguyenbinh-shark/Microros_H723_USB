@@ -1,4 +1,5 @@
 #include "mahony_filter.h"
+#include <string.h>
 
 /*************************************
 Create time: 2023-09-02
@@ -47,6 +48,35 @@ void mahony_update(struct MAHONY_FILTER_t *mahony_filter)
 {
     float normalise;
     float ex,ey,ez;
+
+    mahony_filter->valid = 0;
+    if (!isfinite(mahony_filter->dt) || mahony_filter->dt <= 0.0f ||
+        mahony_filter->dt > 1.0f || !isfinite(mahony_filter->Kp) ||
+        !isfinite(mahony_filter->Ki) ||
+        !isfinite(mahony_filter->gyro.x) || !isfinite(mahony_filter->gyro.y) ||
+        !isfinite(mahony_filter->gyro.z) || !isfinite(mahony_filter->acc.x) ||
+        !isfinite(mahony_filter->acc.y) || !isfinite(mahony_filter->acc.z))
+        return;
+
+    float qnorm2 = mahony_filter->q0 * mahony_filter->q0 +
+                   mahony_filter->q1 * mahony_filter->q1 +
+                   mahony_filter->q2 * mahony_filter->q2 +
+                   mahony_filter->q3 * mahony_filter->q3;
+    if (!isfinite(qnorm2) || qnorm2 < 0.01f ||
+        !isfinite(mahony_filter->exInt) || !isfinite(mahony_filter->eyInt) ||
+        !isfinite(mahony_filter->ezInt)) {
+        /* A corrupt state must not propagate NaNs.  The INS task reseeds tilt
+         * from its next valid accelerometer sample before resuming updates. */
+        mahony_init(mahony_filter, mahony_filter->Kp, mahony_filter->Ki,
+                    mahony_filter->dt);
+        return;
+    }
+    normalise = sqrtf(qnorm2);
+    mahony_filter->q0 /= normalise;
+    mahony_filter->q1 /= normalise;
+    mahony_filter->q2 /= normalise;
+    mahony_filter->q3 /= normalise;
+    RotationMatrix_update(mahony_filter);
     
     /* Gyro: assumed already in rad/s (conversion commented out) */
 //    mahony_filter->gyro.x *= DEG2RAD;        /* normalize quaternion */
@@ -54,9 +84,11 @@ void mahony_update(struct MAHONY_FILTER_t *mahony_filter)
 //    mahony_filter->gyro.z *= DEG2RAD;;
        
     /* Normalize accelerometer measurement */
-    normalise =sqrt(mahony_filter->acc.x * mahony_filter->acc.x 
+    normalise =sqrtf(mahony_filter->acc.x * mahony_filter->acc.x
 										+mahony_filter->acc.y * mahony_filter->acc.y 
 										+mahony_filter->acc.z * mahony_filter->acc.z);
+
+    if (!isfinite(normalise) || normalise < 0.1f) return;
 	
     mahony_filter->acc.x =mahony_filter->acc.x/ normalise;
 	  mahony_filter->acc.y =mahony_filter->acc.y/normalise;   
@@ -92,25 +124,33 @@ void mahony_update(struct MAHONY_FILTER_t *mahony_filter)
     mahony_filter->q3 += ( q0Last * mahony_filter->gyro.z + q1Last * mahony_filter->gyro.y - q2Last * mahony_filter->gyro.x) * halfT;
     
     /* Normalize quaternion */
-    normalise = sqrt(mahony_filter->q0 * mahony_filter->q0 
+    normalise = sqrtf(mahony_filter->q0 * mahony_filter->q0
 										+mahony_filter->q1 * mahony_filter->q1 
 										+mahony_filter->q2 * mahony_filter->q2 
 										+mahony_filter->q3 * mahony_filter->q3);
-												
+    if (!isfinite(normalise) || normalise < 0.01f) {
+        mahony_init(mahony_filter, mahony_filter->Kp, mahony_filter->Ki,
+                    mahony_filter->dt);
+        return;
+    }
     mahony_filter->q0 = mahony_filter->q0/normalise;
     mahony_filter->q1 = mahony_filter->q1/normalise;
     mahony_filter->q2 = mahony_filter->q2/normalise;
     mahony_filter->q3 = mahony_filter->q3/normalise;
     
     /* Update rotation matrix */
-    mahony_filter->RotationMatrix_update(mahony_filter);
+    RotationMatrix_update(mahony_filter);
+    mahony_filter->valid = 1;
 }
 
 // Compute Euler angles from rotation matrix
 void mahony_output(struct MAHONY_FILTER_t *mahony_filter)
 {
     /* Fill roll pitch yaw (Euler angles) */
-    mahony_filter->pitch = -asinf(mahony_filter->rMat[2][0]); 
+    float sine_pitch = mahony_filter->rMat[2][0];
+    if (sine_pitch > 1.0f) sine_pitch = 1.0f;
+    if (sine_pitch < -1.0f) sine_pitch = -1.0f;
+    mahony_filter->pitch = -asinf(sine_pitch);
     mahony_filter->roll = atan2f(mahony_filter->rMat[2][1], mahony_filter->rMat[2][2]) ;
     mahony_filter->yaw = atan2f(mahony_filter->rMat[1][0], mahony_filter->rMat[0][0]) ;
 }
@@ -118,6 +158,7 @@ void mahony_output(struct MAHONY_FILTER_t *mahony_filter)
 // Initialize Mahony filter parameters and function pointers
 void mahony_init(struct MAHONY_FILTER_t *mahony_filter,float Kp,float Ki,float dt)
 {
+    memset(mahony_filter, 0, sizeof(*mahony_filter));
     mahony_filter->Kp = Kp;
     mahony_filter->Ki = Ki;
     mahony_filter->dt = dt;
@@ -126,5 +167,6 @@ void mahony_init(struct MAHONY_FILTER_t *mahony_filter,float Kp,float Ki,float d
     mahony_filter->mahony_update = mahony_update;
     mahony_filter->mahony_output = mahony_output;    
     mahony_filter->RotationMatrix_update = RotationMatrix_update;
+    RotationMatrix_update(mahony_filter);
 }
 

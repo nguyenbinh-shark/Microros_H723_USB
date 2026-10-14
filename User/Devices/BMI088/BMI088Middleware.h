@@ -27,6 +27,11 @@ extern void BMI088_GYRO_NS_H(void);
 
 extern uint8_t BMI088_read_write_byte(uint8_t reg);
 
+/* A complete init/read owns this latch. After the first failed byte, remaining
+ * bytes are skipped until ResetStatus, so one bad sample cannot block per byte. */
+extern void BMI088_SPI_ResetStatus(void);
+extern uint8_t BMI088_SPI_IsValid(void);
+
 extern SPI_HandleTypeDef *BMI088_SPI;
 
 #elif defined(BMI088_USE_IIC)

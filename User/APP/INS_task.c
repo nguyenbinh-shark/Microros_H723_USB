@@ -20,7 +20,10 @@
 #include "can_bsp.h"
 #include "bsp_dwt.h"
 #include "cmsis_os.h"
+#include "FreeRTOS.h"
+#include "task.h"
 #include <stdio.h>
+#include <string.h>
 
 INS_t INS;
 
@@ -28,9 +31,34 @@ struct MAHONY_FILTER_t mahony;
 Axis3f Gyro,Accel;
 float gravity[3] = {0, 0, 9.81f};
 
-// Calibration offsets (in radians)
-#define PITCH_OFFSET_DEG (-2.0f)  // Negative to compensate forward tilt
-#define PITCH_OFFSET_RAD (PITCH_OFFSET_DEG * 0.0174533f)  // Convert to radians
+/* Startup calibration only.  Keep the board still: a six-axis IMU cannot
+ * distinguish an extremely slow constant yaw rotation from gyro bias.  Once
+ * locked, the bias never adapts, so real slow rotations remain measurable. */
+#define INS_WARMUP_MS          1000U
+#define INS_CALIBRATION_MS     3000U
+#define INS_CALIBRATION_MIN_SAMPLES 2000U
+#define INS_STILL_GYRO_MAX     0.01f   /* rad/s, after configured driver offsets */
+#define INS_STILL_GYRO_SPAN    0.01f   /* rad/s over the entire window */
+#define INS_STILL_GYRO_STD     0.0025f /* rad/s */
+#define INS_STILL_ACCEL_SPAN   0.25f   /* m/s^2 per axis */
+#define INS_STILL_GRAVITY_ERR  0.4f    /* m/s^2 */
+
+typedef struct
+{
+    uint32_t count;
+    uint32_t first_tick_ms;
+    float mean[3];
+    float m2[3];
+    float gyro_min[3], gyro_max[3];
+    float accel_min[3], accel_max[3];
+} INS_Calibration_t;
+
+static INS_Calibration_t calibration;
+static INS_Snapshot_t snapshot;
+static float gyro_bias[3];
+static uint8_t calibrated;
+static uint8_t attitude_seeded;
+static uint32_t sequence;
 
 uint32_t INS_DWT_Count = 0;
 float ins_dt = 0.0f;
@@ -39,10 +67,141 @@ int stop_time;
 float Pitch_deg;
 float Roll_deg;
 float Yaw_deg;
+
+uint8_t INS_GetSnapshot(INS_Snapshot_t *out)
+{
+    if (out == NULL) return 0;
+    taskENTER_CRITICAL();
+    *out = snapshot;
+    taskEXIT_CRITICAL();
+    return out->valid;
+}
+
+static void INS_StoreSnapshot(uint32_t sample_tick_ms, uint8_t valid)
+{
+    INS_Snapshot_t next = {0};
+    memcpy(next.q, INS.q, sizeof(next.q));
+    memcpy(next.gyro, INS.Gyro, sizeof(next.gyro));
+    memcpy(next.accel, INS.Accel, sizeof(next.accel));
+    memcpy(next.gyro_bias, gyro_bias, sizeof(next.gyro_bias));
+    next.sample_tick_ms = sample_tick_ms;
+    next.sequence = ++sequence;
+    next.calibrated = calibrated;
+    next.valid = valid;
+    taskENTER_CRITICAL();
+    snapshot = next;
+    taskEXIT_CRITICAL();
+}
+
+static void INS_ResetCalibrationWindow(void)
+{
+    memset(&calibration, 0, sizeof(calibration));
+}
+
+static void INS_SeedAttitudeFromAccel(void)
+{
+    float roll = atan2f(BMI088.Accel[1], BMI088.Accel[2]);
+    float pitch = atan2f(-BMI088.Accel[0],
+                        sqrtf(BMI088.Accel[1] * BMI088.Accel[1] +
+                              BMI088.Accel[2] * BMI088.Accel[2]));
+    float cr = cosf(roll * 0.5f), sr = sinf(roll * 0.5f);
+    float cp = cosf(pitch * 0.5f), sp = sinf(pitch * 0.5f);
+    mahony_init(&mahony, 1.0f, 0.001f, ins_dt);
+    mahony.q0 = cr * cp;
+    mahony.q1 = sr * cp;
+    mahony.q2 = cr * sp;
+    mahony.q3 = -sr * sp;
+    RotationMatrix_update(&mahony);
+    memset(INS.MotionAccel_b, 0, sizeof(INS.MotionAccel_b));
+    memset(INS.MotionAccel_n, 0, sizeof(INS.MotionAccel_n));
+    attitude_seeded = 1;
+}
+
+static void INS_UpdateCalibration(uint32_t now_ms)
+{
+    if (calibrated) return;
+
+    float accel_norm = sqrtf(BMI088.Accel[0] * BMI088.Accel[0] +
+                             BMI088.Accel[1] * BMI088.Accel[1] +
+                             BMI088.Accel[2] * BMI088.Accel[2]);
+    if (fabsf(accel_norm - 9.81f) > INS_STILL_GRAVITY_ERR) {
+        INS_ResetCalibrationWindow();
+        return;
+    }
+    for (uint8_t i = 0; i < 3; ++i) {
+        if (fabsf(BMI088.Gyro[i]) > INS_STILL_GYRO_MAX) {
+            INS_ResetCalibrationWindow();
+            return;
+        }
+    }
+
+    if (calibration.count == 0U) {
+        calibration.first_tick_ms = now_ms;
+        for (uint8_t i = 0; i < 3; ++i) {
+            calibration.gyro_min[i] = calibration.gyro_max[i] = BMI088.Gyro[i];
+            calibration.accel_min[i] = calibration.accel_max[i] = BMI088.Accel[i];
+        }
+    }
+    ++calibration.count;
+    for (uint8_t i = 0; i < 3; ++i) {
+        float g = BMI088.Gyro[i], a = BMI088.Accel[i];
+        float delta = g - calibration.mean[i];
+        calibration.mean[i] += delta / (float)calibration.count;
+        calibration.m2[i] += delta * (g - calibration.mean[i]);
+        if (g < calibration.gyro_min[i]) calibration.gyro_min[i] = g;
+        if (g > calibration.gyro_max[i]) calibration.gyro_max[i] = g;
+        if (a < calibration.accel_min[i]) calibration.accel_min[i] = a;
+        if (a > calibration.accel_max[i]) calibration.accel_max[i] = a;
+        if (calibration.gyro_max[i] - calibration.gyro_min[i] > INS_STILL_GYRO_SPAN ||
+            calibration.accel_max[i] - calibration.accel_min[i] > INS_STILL_ACCEL_SPAN) {
+            INS_ResetCalibrationWindow();
+            return;
+        }
+    }
+
+    if (now_ms - calibration.first_tick_ms < INS_CALIBRATION_MS ||
+        calibration.count < INS_CALIBRATION_MIN_SAMPLES) return;
+    for (uint8_t i = 0; i < 3; ++i) {
+        float variance = calibration.m2[i] / (float)(calibration.count - 1U);
+        if (variance > INS_STILL_GYRO_STD * INS_STILL_GYRO_STD) {
+            INS_ResetCalibrationWindow();
+            return;
+        }
+    }
+    memcpy(gyro_bias, calibration.mean, sizeof(gyro_bias));
+    calibrated = 1;
+    /* Reanchor relative yaw and tilt at the completed stationary startup. */
+    INS_SeedAttitudeFromAccel();
+    printf("[INS] Stationary gyro calibration locked: %.6f %.6f %.6f rad/s\r\n",
+           gyro_bias[0], gyro_bias[1], gyro_bias[2]);
+}
+
+static uint8_t INS_SensorSampleValid(void)
+{
+    for (uint8_t i = 0; i < 3; ++i) {
+        if (!isfinite(BMI088.Gyro[i]) || !isfinite(BMI088.Accel[i]) ||
+            fabsf(BMI088.Gyro[i]) > 34.8f || fabsf(BMI088.Accel[i]) > 58.8f)
+            return 0;
+    }
+    float accel_norm2 = BMI088.Accel[0] * BMI088.Accel[0] +
+                        BMI088.Accel[1] * BMI088.Accel[1] +
+                        BMI088.Accel[2] * BMI088.Accel[2];
+    return accel_norm2 > 0.01f;
+}
+
 void INS_Init(void)
 {
-	 mahony_init(&mahony, 1.0f, 0.001f, 0.001f);  /* Ki=0.001 to cancel residual gyro bias */
-   INS.AccelLPF = 0.0089f;
+    memset(&INS, 0, sizeof(INS));
+    memset(&snapshot, 0, sizeof(snapshot));
+    memset(gyro_bias, 0, sizeof(gyro_bias));
+    INS_ResetCalibrationWindow();
+    calibrated = 0;
+    attitude_seeded = 0;
+    sequence = 0;
+    ins_time = 0.0f;
+    mahony_init(&mahony, 1.0f, 0.001f, 0.001f);
+    INS.q[0] = 1.0f;
+    INS.AccelLPF = 0.0089f;
 }
 
 void INS_task(void)
@@ -52,6 +211,7 @@ void INS_task(void)
 	 DWT_GetDeltaT(&INS_DWT_Count);  /* Reset counter to "now" — avoids giant dt on first loop */
 
 	 uint8_t first_data_logged = 0;
+	 uint32_t startup_tick_ms = HAL_GetTick();
 	 uint32_t next_wake = osKernelGetTickCount();
 
 	 while(1)
@@ -69,11 +229,20 @@ void INS_task(void)
 		osDelayUntil(next_wake);
 
 		ins_dt = DWT_GetDeltaT(&INS_DWT_Count);
-		if (ins_dt > 0.01f) ins_dt = 0.001f;  /* Cap: ignore any stale dt > 10ms */
-    
-		mahony.dt = ins_dt;
 
-    BMI088_Read(&BMI088);
+        BMI088_Read(&BMI088);
+        uint32_t sample_tick_ms = HAL_GetTick();
+        if (!isfinite(ins_dt) || ins_dt <= 0.0f || ins_dt > 0.01f ||
+            !BMI088_ReadIsValid() || !INS_SensorSampleValid()) {
+            if (!calibrated) INS_ResetCalibrationWindow();
+            INS.ins_flag = 0;
+            INS_StoreSnapshot(sample_tick_ms, 0);
+            continue;
+        }
+        mahony.dt = ins_dt;
+        if (!attitude_seeded) INS_SeedAttitudeFromAccel();
+        if (sample_tick_ms - startup_tick_ms >= INS_WARMUP_MS)
+            INS_UpdateCalibration(sample_tick_ms);
 
     INS.Accel[X] = BMI088.Accel[X];
     INS.Accel[Y] = BMI088.Accel[Y];
@@ -81,15 +250,15 @@ void INS_task(void)
 	  Accel.x=BMI088.Accel[0];
 	  Accel.y=BMI088.Accel[1];
 		Accel.z=BMI088.Accel[2];
-    INS.Gyro[X] = BMI088.Gyro[X];
-    INS.Gyro[Y] = BMI088.Gyro[Y];
-    INS.Gyro[Z] = BMI088.Gyro[Z];
-  	Gyro.x=BMI088.Gyro[0];
-		Gyro.y=BMI088.Gyro[1];
-		Gyro.z=BMI088.Gyro[2];
+    INS.Gyro[X] = BMI088.Gyro[X] - gyro_bias[X];
+    INS.Gyro[Y] = BMI088.Gyro[Y] - gyro_bias[Y];
+    INS.Gyro[Z] = BMI088.Gyro[Z] - gyro_bias[Z];
+    Gyro.x=INS.Gyro[X];
+    Gyro.y=INS.Gyro[Y];
+    Gyro.z=INS.Gyro[Z];
 
 		/* Log first IMU data to verify sensor is alive */
-		if (!first_data_logged && ins_time > 10.0f) {
+		if (!first_data_logged) {
 			printf("[INS] BMI088 Raw: Ax=%.3f Ay=%.3f Az=%.3f Gx=%.4f Gy=%.4f Gz=%.4f\r\n",
 				BMI088.Accel[0], BMI088.Accel[1], BMI088.Accel[2],
 				BMI088.Gyro[0], BMI088.Gyro[1], BMI088.Gyro[2]);
@@ -98,6 +267,13 @@ void INS_task(void)
 
 		mahony_input(&mahony,Gyro,Accel);
 		mahony_update(&mahony);
+        if (!mahony.valid) {
+            attitude_seeded = 0;
+            INS.ins_flag = 0;
+            if (!calibrated) INS_ResetCalibrationWindow();
+            INS_StoreSnapshot(sample_tick_ms, 0);
+            continue;
+        }
 		mahony_output(&mahony);
 	  RotationMatrix_update(&mahony);
 				
@@ -132,14 +308,9 @@ void INS_task(void)
 		  INS.MotionAccel_n[2]=0.0f;// z-axis
 		}
  
-		if(ins_time>3000.0f)
+		INS.ins_flag = calibrated;
+		if(calibrated)
 		{
-			if (!INS.ins_flag) {
-				printf("[INS] Warmup complete! ins_flag=1, Mahony AHRS ready.\r\n");
-				printf("[INS] Pitch=%.2f Roll=%.2f Yaw=%.2f deg\r\n",
-					rad_to_deg(mahony.roll), rad_to_deg(mahony.pitch), rad_to_deg(mahony.yaw));
-			}
-			INS.ins_flag=1; // Quaternion and motion acceleration are ready; control can start.
 			// Read attitude angles.
       INS.Pitch=mahony.roll ;//+ PITCH_OFFSET_RAD;  // Apply pitch calibration offset
 		INS.Roll=mahony.pitch;
@@ -161,10 +332,8 @@ void INS_task(void)
 			INS.YawTotalAngle = 6.283f* INS.YawRoundCount + INS.Yaw;
 			INS.YawAngleLast = INS.Yaw;
 		}
-		else
-		{
-		 ins_time++;
-		}
+		ins_time = (float)(sample_tick_ms - startup_tick_ms);
+		INS_StoreSnapshot(sample_tick_ms, 1);
 	}
 }
 /**

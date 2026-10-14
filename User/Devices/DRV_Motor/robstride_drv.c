@@ -25,6 +25,12 @@ static inline float uint_to_float(int x_int, float x_min, float x_max, int bits)
     return ((float)x_int) * span / ((float)((1 << bits) - 1)) + offset;
 }
 
+/* ========================================================================== */
+/*   ACTIVE — 29-Bit Extended Protocol.  This is what the robot runs on.       */
+/*   Everything the wheels depend on lives between here and the MIT 11-BIT     */
+/*   banner further down. All symbols carry the rs_ext_ prefix.                */
+/* ========================================================================== */
+
 uint32_t rs_ext_build_id(uint8_t comm_type, uint16_t data2, uint8_t target_id)
 {
     return (((uint32_t)comm_type & 0x1F) << 24) |
@@ -206,44 +212,99 @@ int rs_ext_parse_feedback(rs_ext_fb_t *fb, uint32_t rx_ext_id, const uint8_t *rx
     fb->vel     = uint_to_float(vel_raw, RS_EXT_V_MIN, RS_EXT_V_MAX, 16);
     fb->tor     = uint_to_float(tor_raw, RS_EXT_T_MIN, RS_EXT_T_MAX, 16);
     fb->temp    = ((float)tmp_raw) / 10.0f;
-    fb->last_rx_tick = HAL_GetTick();
 
-    /* ── Continuous Multi-turn Angle Accumulation ─────────────── */
-    const float span = RS_EXT_P_MAX - RS_EXT_P_MIN; /* ~25.132741 rad (8*pi) */
-    const float half_span = span * 0.5f;
+    /* ── Continuous multi-turn angle ─────────────────────────────
+       Bytes 0..1 are a 16-bit code scaled across [-4pi, +4pi]. What the motor
+       puts there once the shaft leaves that window is its firmware's choice,
+       and the two possibilities need opposite handling:
+
+         wraps       the code rolls 0xFFFF -> 0x0000 and the sample jumps a
+                     whole span, which folds back exactly.
+         saturates   the code pins at 0x0000 / 0xFFFF and stops moving. No jump
+                     is ever visible, so folding deltas alone leaves the angle
+                     frozen on the rail — the +12.5 rad the LCD was stuck at.
+                     RobStride and CyberGear units behave this way.
+
+       So while a sample sits on a rail the angle rides the reported velocity,
+       which stays valid out there, and the first sample back inside the window
+       re-anchors pos onto the nearest angle congruent with it, discarding
+       whatever the integration drifted.
+
+       Anchoring on congruence rather than summing deltas also makes the
+       accumulator self-healing: one dropped or corrupt frame costs a single
+       sample instead of biasing every sample after it.
+
+       Limit, unchanged from the delta version: a shaft moving more than half a
+       span (4pi, two revolutions) between samples is indistinguishable from a
+       wrap. At the 20 rad/s this protocol tops out at, that takes a 600 ms hole
+       in the feedback stream.
+
+       Rounding is a cast rather than floorf() to keep the ISR out of libm; the
+       argument is a turn count, nowhere near the int32 range. */
+    const float    span    = RS_EXT_P_MAX - RS_EXT_P_MIN;  /* 8pi, ~25.13 rad */
+    const uint32_t now     = HAL_GetTick();
+    const uint8_t  at_rail = (p_raw <= RS_FB_RAIL_LSB) ||
+                             (p_raw >= (0xFFFFu - RS_FB_RAIL_LSB));
 
     if (!fb->init_done)
     {
-        fb->last_raw_pos = raw_pos;
-        fb->pos          = raw_pos;
-        fb->round_cnt    = 0;
-        fb->init_done    = 1U;
+        fb->pos       = raw_pos;
+        fb->round_cnt = 0;
+        fb->init_done = 1U;
+    }
+    else if (at_rail)
+    {
+        /* dt is capped so a gap in feedback cannot inject one large step, and
+           the deadband keeps velocity noise from creeping the angle while the
+           shaft rests against the rail. */
+        float dt = (float)(uint32_t)(now - fb->last_rx_tick) * 0.001f;
+        if (dt > RS_FB_ACC_MAX_DT) dt = RS_FB_ACC_MAX_DT;
+        if (fb->vel > RS_FB_ACC_VEL_DB || fb->vel < -RS_FB_ACC_VEL_DB)
+        {
+            fb->pos += fb->vel * dt;
+        }
     }
     else
     {
-        float delta = raw_pos - fb->last_raw_pos;
-        if (delta > half_span)
-        {
-            /* Jumped backward across lower boundary */
-            delta -= span;
-            fb->round_cnt--;
-        }
-        else if (delta < -half_span)
-        {
-            /* Jumped forward across upper boundary */
-            delta += span;
-            fb->round_cnt++;
-        }
-        fb->pos += delta;
-        fb->last_raw_pos = raw_pos;
+        float turns = (fb->pos - raw_pos) / span;
+        turns = (float)(int32_t)(turns + (turns >= 0.0f ? 0.5f : -0.5f));
+        fb->pos       = raw_pos + turns * span;
+        fb->round_cnt = (int32_t)turns;
     }
+
+    fb->at_rail      = at_rail;
+    fb->last_raw_pos = raw_pos;
+    fb->last_rx_tick = now;
 
     return 0;
 }
 
-/* -------------------------------------------------------------------------- */
-/*                  Classic 11-Bit MIT Functions (Backward Compatibility)    */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/*   MIT 11-BIT MODE — a second, complete protocol.  Built, but not called.    */
+/*                                                                            */
+/*   This is NOT dead RobStride code and NOT a broken port: it is the classic  */
+/*   MIT-Cheetah framing, self-consistent and ready to use:                    */
+/*     - 11-bit standard identifier, id = motor_id + RS_MODE_MIT (0x000),      */
+/*       sent through canx_send_data() (FDCAN_STANDARD_ID)                     */
+/*     - payload packed P16 | V12 | Kp12 | Kd12 | T12 across the 8 bytes       */
+/*     - enable  = FF FF FF FF FF FF FF FC  (enter motor mode)                 */
+/*       disable = FF FF FF FF FF FF FF FD  (exit motor mode)                  */
+/*   Use it for actuators that speak MIT 11-bit (MIT-Cheetah, Damiao, and      */
+/*   RobStride units switched into MIT mode).                                  */
+/*                                                                            */
+/*   The firmware currently drives the wheels over the 29-bit extended         */
+/*   protocol above instead, so nothing calls rs_mit_cmd / rs_enable /         */
+/*   rs_disable / rs_parse_feedback and --gc-sections keeps them out of the    */
+/*   image. Switching modes means changing the call sites in motor_task.c and  */
+/*   can_bsp.c, not editing this block.                                        */
+/*                                                                            */
+/*   Note for reference: CyberGear has NO 11-bit mode — its protocol is 29-bit */
+/*   only (see cybergear_drv.h). MIT 11-bit and CyberGear are unrelated.       */
+/*                                                                            */
+/*   @warning This block uses the RS_* ranges, which are NOT the RS_EXT_*      */
+/*            ranges used by the 29-bit code (V: 33 vs 20 rad/s, KP: 500 vs    */
+/*            5000, KD: 5 vs 100). Each set belongs to its own protocol.       */
+/* ========================================================================== */
 
 void rs_parse_feedback(rs_fb_t *fb, const uint8_t *rx_data, uint32_t len)
 {

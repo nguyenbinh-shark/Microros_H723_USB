@@ -13,7 +13,7 @@ The firmware runs five concurrent FreeRTOS tasks under CMSIS-RTOS v2 API:
 | `insTask` | `INS_Task_Entry` | **1 kHz (1 ms)** | `osPriorityRealtime` | 4 KB | Reads BMI088 IMU via SPI2; runs Mahony AHRS filter to compute attitude quaternion & Euler angles. |
 | `observeTask` | `Observe_Task_Entry` | **333 Hz (3 ms)** | `osPriorityHigh` | 4 KB | Executes Kalman Velocity Observer to fuse wheel odometry with IMU linear acceleration. |
 | `motorTask` | `Motor_Task_Entry` | **100 Hz (10 ms)** | `osPriorityAboveNormal` | 4 KB | Runs differential kinematics, formats FDCAN operation control frames, dispatches commands to actuators. |
-| `defaultTask` | `StartDefaultTask` | **50 Hz (20 ms)** | `osPriorityNormal` | **12 KB** | Manages micro-ROS session lifecycle, spins executor, publishes `/motor_fb` (50 Hz) and `/motor_status` (5 Hz). |
+| `defaultTask` | `StartDefaultTask` | **50 Hz sensor timers (20 ms)** | `osPriorityNormal` | **12 KB** | Manages micro-ROS session lifecycle, spins executor, publishes `/motor_fb` and `/imu/data` (50 Hz targets), and `/motor_status` (5 Hz). |
 | `lcdTask` | `LCD_Task_Entry` | **10 Hz (100 ms)** | `osPriorityBelowNormal` | 4 KB | Renders telemetry, ping RTT, topic rates, and bus diagnostics onto ST7789 display. |
 
 ```text
@@ -66,7 +66,7 @@ All micro-ROS initialization and entity management reside in `Core/Src/freertos.
 1. **State Machine (`g_agent_state`):**
    - `WAITING_AGENT`: Pings micro-ROS agent via `rmw_uros_ping_agent()`.
    - `AGENT_AVAILABLE`: Creates node, publishers, subscribers, and executor.
-   - `AGENT_CONNECTED`: Spins executor and publishes feedback. Also executes periodic ping (100 ms) and time synchronization (every 60 s).
+   - `AGENT_CONNECTED`: Spins executor and publishes feedback. Pings every 3 s with a 150 ms timeout, reconnecting after three consecutive misses. Synchronizes time every 60 s, or retries every second while unsynchronized; timestamped sensor messages require successful synchronization.
    - `AGENT_DISCONNECTED`: Safely stops motors (`robot_cmd_set(0, 0, 0)`), tears down DDS entities, and returns to `WAITING_AGENT`.
 2. **Dynamic Memory Allocation:**
    - Static memory pool managed by `custom_memory_manager.c` to prevent heap fragmentation in FreeRTOS.

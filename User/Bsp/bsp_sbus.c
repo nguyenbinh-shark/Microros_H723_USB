@@ -194,6 +194,58 @@ RC_ControlMode_t sbus_get_control_mode(void)
     }
 }
 
+/* Armed at boot to match the motor_apply_enable(1) the Motor task does on
+   startup, so the button starts in sync with the hardware. */
+static uint8_t s_armed        = 1U;
+static uint8_t s_arm_level    = 0U;   /* debounced button level, previous cycle */
+static uint8_t s_arm_seen     = 0U;   /* 0 until the first valid frame is read  */
+
+void sbus_arm_update(void)
+{
+    if (!sbus_is_online())
+    {
+        /* Re-sync to whatever the switch sits at when the link comes back,
+           instead of firing a phantom press on the first frame. */
+        s_arm_seen = 0U;
+        return;
+    }
+
+    /* Hysteresis: keep the previous level while the channel is in the dead zone. */
+    uint8_t level = s_arm_level;
+    if (sbus.ch[RC_CH_ARM] > RC_ARM_HIGH)      level = 1U;
+    else if (sbus.ch[RC_CH_ARM] < RC_ARM_LOW)  level = 0U;
+
+    if (!s_arm_seen)
+    {
+        s_arm_seen  = 1U;
+        s_arm_level = level;
+#if !RC_ARM_TOGGLE
+        s_armed = level;
+#endif
+        return;
+    }
+
+#if RC_ARM_TOGGLE
+    if (level && !s_arm_level)   /* rising edge = one press */
+    {
+        s_armed = s_armed ? 0U : 1U;
+        printf("[SBUS] Arm button -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
+    }
+#else
+    if (level != s_armed)
+    {
+        s_armed = level;
+        printf("[SBUS] Arm switch -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
+    }
+#endif
+    s_arm_level = level;
+}
+
+bool sbus_is_armed(void)
+{
+    return s_armed != 0U;
+}
+
 void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_wz)
 {
     if (out_vx == NULL || out_wz == NULL) return;
@@ -205,20 +257,20 @@ void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_w
         return;
     }
 
-    /* 
-     * Channel 2 (CH2, Pitch Stick / Forward-Backward):
-     * Range 364..1684, Center 1024
+    /*
+     * Linear velocity from the vertical stick axis (RC_CH_VX).
+     * Range 364..1684, Center 1024.
      */
-    int32_t raw_vx = (int32_t)sbus.ch[1] - (int32_t)SBUS_CHANNEL_MID;
-    if (labs(raw_vx) < 35) raw_vx = 0; /* Deadband ±35 */
-    *out_vx = ((float)raw_vx / 660.0f) * max_vx;
+    int32_t raw_vx = (int32_t)sbus.ch[RC_CH_VX] - (int32_t)SBUS_CHANNEL_MID;
+    if (labs(raw_vx) < SBUS_DEADBAND) raw_vx = 0;
+    *out_vx = RC_VX_SIGN * ((float)raw_vx / (float)SBUS_CHANNEL_RANGE) * max_vx;
 
     /*
-     * Channel 1 (CH1, Roll / Yaw Stick / Steering):
-     * Range 364..1684, Center 1024 (Left/Right)
+     * Angular velocity from the horizontal stick axis (RC_CH_WZ).
+     * Range 364..1684, Center 1024.
      */
-    int32_t raw_wz = (int32_t)sbus.ch[0] - (int32_t)SBUS_CHANNEL_MID;
-    if (labs(raw_wz) < 35) raw_wz = 0; /* Deadband ±35 */
-    *out_wz = -((float)raw_wz / 660.0f) * max_wz; /* Inverted for standard ROS CCW positive */
+    int32_t raw_wz = (int32_t)sbus.ch[RC_CH_WZ] - (int32_t)SBUS_CHANNEL_MID;
+    if (labs(raw_wz) < SBUS_DEADBAND) raw_wz = 0;
+    *out_wz = RC_WZ_SIGN * ((float)raw_wz / (float)SBUS_CHANNEL_RANGE) * max_wz;
 }
 

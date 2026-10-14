@@ -28,6 +28,7 @@ graph TD
         Nav2["Navigation / Teleop Node"]
         Agent["micro-ROS Agent (ROS 2 Jazzy)"]
         Nav2 -->|/cmd_vel| Agent
+        Nav2 -->|/cmd_mit| Agent
         Nav2 -->|/motor_enable| Agent
         Agent -->|/motor_fb| Nav2
         Agent -->|/motor_status| Nav2
@@ -65,10 +66,15 @@ graph TD
 
 | Topic Name | Direction | Message Type | QoS Reliability | Rate | Description |
 |---|:---:|---|---|:---:|---|
-| [`/cmd_vel`](docs/topics.md#31-cmd_vel-velocity-command) | Sub | `geometry_msgs/msg/Twist` | **Best Effort** | Up to 50 Hz | Target velocity ($v_x\text{ [m/s]}$, $\omega_z\text{ [rad/s]}$) |
-| [`/motor_enable`](docs/topics.md#32-motor_enable-motor-state-control) | Sub | `std_msgs/msg/Bool` | **Reliable** | On-demand | Enable (`true`) / Disable (`false`) actuators |
-| [`/motor_fb`](docs/topics.md#33-motor_fb-wheel-odometry--joint-feedback) | Pub | `sensor_msgs/msg/JointState` | **Best Effort** | **50 Hz** | Position (rad), velocity (rad/s), torque (Nm) |
-| [`/motor_status`](docs/topics.md#34-motor_status-status-bitmask) | Pub | `std_msgs/msg/UInt8` | **Reliable** | **5 Hz** | Health, CAN status, and timeout bitmask |
+| [`/cmd_vel`](docs/topics.md#31-cmd_vel-velocity-command--velocity-mode) | Sub | `geometry_msgs/msg/Twist` | **Best Effort** | Up to 50 Hz | Target velocity ($v_x\text{ [m/s]}$, $\omega_z\text{ [rad/s]}$), motor **Velocity mode** |
+| [`/cmd_mit`](docs/topics.md#32-cmd_mit-mit-command--mit-mode) | Sub | `std_msgs/msg/Float64MultiArray` | **Best Effort** | Up to 500 Hz | Per-wheel $[p, v, K_p, K_d, \tau]$, motor **MIT mode** |
+| [`/cmd_torque`](docs/topics.md#321-cmd_torque-torque-command--mit-mode) | Sub | `std_msgs/msg/Float64MultiArray` | **Best Effort** | Up to 500 Hz | Per-wheel torque $[\tau_L, \tau_R]$ (Nm), switches to **MIT mode** automatically |
+| [`/motor_enable`](docs/topics.md#33-motor_enable-motor-state-control) | Sub | `std_msgs/msg/Bool` | **Reliable** | On-demand | Enable (`true`) / Disable (`false`) actuators |
+| [`/motor_fb`](docs/topics.md#34-motor_fb-wheel-odometry--joint-feedback) | Pub | `sensor_msgs/msg/JointState` | **Best Effort** | **50 Hz** | Position (rad), velocity (rad/s), torque (Nm) |
+| [`/motor_status`](docs/topics.md#35-motor_status-status-bitmask) | Pub | `std_msgs/msg/UInt8` | **Reliable** | **5 Hz** | Health, CAN status, and timeout bitmask |
+| [`/imu/data`](docs/topics.md#36-imudata-bmi088-imu) | Pub | `sensor_msgs/msg/Imu` | **Best Effort** | **50 Hz target** | Calibrated gyro, acceleration including gravity, and relative quaternion |
+
+Keep the board still for at least 4 seconds at startup for gyro calibration. `/imu/data` requires calibrated, valid, fresh samples and synchronized agent time. Quaternion yaw is relative to startup; covariance is a datasheet-based starting value set in `robot_config.h`. See the [IMU interface](docs/topics.md#36-imudata-bmi088-imu) before configuring sensor fusion.
 
 ### `/motor_status` Bitmask Allocation
 
@@ -79,7 +85,8 @@ graph TD
 | 2 | `0x04` | `MSTAT_CAN1_BUSOFF` | FDCAN1 is in Bus-Off state |
 | 3 | `0x08` | `MSTAT_CAN3_BUSOFF` | FDCAN3 is in Bus-Off state |
 | 4 | `0x10` | `MSTAT_MOTORS_ENABLED` | Actuators are enabled and receiving power |
-| 5 | `0x20` | `MSTAT_CMD_TIMEOUT` | No `/cmd_vel` received for > 500 ms |
+| 5 | `0x20` | `MSTAT_CMD_TIMEOUT` | Active command topic silent for > 500 ms |
+| 6 | `0x40` | `MSTAT_MODE_MIT` | `0` = Velocity mode (`/cmd_vel`), `1` = MIT mode (`/cmd_mit` or `/cmd_torque`) |
 
 ---
 
@@ -120,7 +127,7 @@ ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm32_robot
 # Run the keyboard teleop script
 python3 teleop/teleop_key.py
 ```
-> **⚠️ Safety Note:** Motors start **DISABLED** by default. Press **`e`** in the teleop terminal to enable motors before driving with `w`/`a`/`s`/`d`.
+> **⚠️ Safety Note:** The current `motor_task.c` requests **ENABLED** at boot. For IMU-only commissioning, disconnect motor power and power the board via USB.
 
 ---
 

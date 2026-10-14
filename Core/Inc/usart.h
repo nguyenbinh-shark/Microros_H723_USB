@@ -45,6 +45,11 @@ void MX_UART7_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
+/* Characters the debug log lost to ring overflow since boot. Defined in
+   usart.c; the diagnostics print it so a trimmed log cannot quietly be an
+   incomplete one. */
+uint32_t debug_uart_tx_dropped(void);
+
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

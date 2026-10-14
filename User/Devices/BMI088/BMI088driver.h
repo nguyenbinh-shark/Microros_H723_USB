@@ -102,4 +102,9 @@ extern IMU_Data_t BMI088;
 
 extern void BMI088_Read(IMU_Data_t *bmi088);
 
+/* Valid only after the latest complete accel + gyro + temperature read passed
+ * SPI/chip-ID/calibration/finite-value checks. Failed reads leave old vectors
+ * untouched; consumers must check this flag before using them as a new sample. */
+extern uint8_t BMI088_ReadIsValid(void);
+
 #endif

@@ -1,4 +1,10 @@
-#include "motor_drv.h"
+/**
+ * @file  cybergear_drv.c
+ * @brief Xiaomi CyberGear actuator driver — REFERENCE ONLY, NOT USED BY THE FIRMWARE.
+ *        See cybergear_drv.h for why this file exists and what to fix before
+ *        wiring it in. The active wheel-motor driver is robstride_drv.c.
+ */
+#include "cybergear_drv.h"
 
 #include <string.h>
 
@@ -31,7 +37,7 @@ static float uint_to_float(int x_int, float x_min, float x_max, int bits)
     return ((float)x_int) * span / ((float)((1 << bits) - 1)) + offset;
 }
 
-void cybergear_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data, uint32_t data_len)
+void cybergear_fbdata(cybergear_motor_t *motor, uint8_t *rx_data, uint32_t data_len)
 {
     if (data_len == FDCAN_DLC_BYTES_8)
     {
@@ -55,7 +61,7 @@ void cybergear_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data, uint32_t data_len)
     }
 }
 
-void enable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
+void cybergear_enable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
 {
     uint8_t data[8];
     uint32_t id = cybergear_build_extid(CYBERGEAR_COMM_ENABLE, CYBERGEAR_MASTER_ID, (uint8_t)motor_id);
@@ -65,7 +71,7 @@ void enable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
     canx_send_data(hcan, id, data, 8);
 }
 
-void disable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
+void cybergear_disable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
 {
     uint8_t data[8];
     uint32_t id = cybergear_build_extid(CYBERGEAR_COMM_STOP, CYBERGEAR_MASTER_ID, (uint8_t)motor_id);
@@ -75,7 +81,7 @@ void disable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id)
     canx_send_data(hcan, id, data, 8);
 }
 
-void mit_ctrl(hcan_t *hcan, uint32_t motor_id, float pos, float vel, float kp, float kd, float torq)
+void cybergear_mit_ctrl(hcan_t *hcan, uint32_t motor_id, float pos, float vel, float kp, float kd, float torq)
 {
     /* CyberGear operation-control frame (comm type 1), manual §4.1.2 / §4.2.1:
      *   ExtID data-area-2 (bits 23..8) = torque (16-bit, -12..12 Nm)

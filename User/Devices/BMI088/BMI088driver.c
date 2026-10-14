@@ -28,6 +28,12 @@ uint8_t caliOffset = 1;
 int16_t caliCount = 0;
 
 IMU_Data_t BMI088;
+static uint8_t bmi088_read_valid = 0U;
+
+uint8_t BMI088_ReadIsValid(void)
+{
+    return bmi088_read_valid;
+}
 
 #if defined(BMI088_USE_SPI)
 
@@ -119,10 +125,16 @@ void BMI088_Init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate)
 uint8_t BMI088_init(SPI_HandleTypeDef *bmi088_SPI, uint8_t calibrate)
 {
     BMI088_SPI = bmi088_SPI;
+    bmi088_read_valid = 0U;
+    BMI088_SPI_ResetStatus();
     error = BMI088_NO_ERROR;
 
     error |= bmi088_accel_init();
     error |= bmi088_gyro_init();
+    if (!BMI088_SPI_IsValid())
+        error = BMI088_NO_SENSOR;
+    if (error != BMI088_NO_ERROR)
+        return error;
     if (calibrate)
             { // Calibration requested: keep the IMU level and completely still.
 		   Calibrate_MPU_Offset(&BMI088);
@@ -379,63 +391,66 @@ uint8_t bmi088_gyro_init(void)
 
 void BMI088_Read(IMU_Data_t *bmi088)
 {
-    static uint8_t buf[8] = {0, 0, 0, 0, 0, 0};
-    static int16_t bmi088_raw_temp;
-    
-        // Read 3-axis acceleration.
-    BMI088_accel_read_muli_reg(BMI088_ACCEL_XOUT_L, buf, 6);
-		if (caliOffset)
+    uint8_t accel_id = 0U;
+    uint8_t accel_buf[6] = {0};
+    uint8_t gyro_buf[8] = {0};
+    uint8_t temp_buf[2] = {0};
+    float accel[3], gyro[3];
+    int16_t raw;
+
+    bmi088_read_valid = 0U;
+    BMI088_SPI_ResetStatus();
+    if (bmi088 == NULL ||
+        !isfinite(bmi088->gNorm) || bmi088->gNorm < 8.0f || bmi088->gNorm > 12.0f ||
+        !isfinite(bmi088->AccelScale) || bmi088->AccelScale < 0.75f || bmi088->AccelScale > 1.30f ||
+        !isfinite(BMI088_ACCEL_SEN) || BMI088_ACCEL_SEN <= 0.0f ||
+        !isfinite(BMI088_GYRO_SEN) || BMI088_GYRO_SEN <= 0.0f)
+        return;
+
+    BMI088_accel_read_single_reg(BMI088_ACC_CHIP_ID, accel_id);
+    if (!BMI088_SPI_IsValid() || accel_id != BMI088_ACC_CHIP_ID_VALUE)
+        return;
+
+    BMI088_accel_read_muli_reg(BMI088_ACCEL_XOUT_L, accel_buf, 6);
+    BMI088_gyro_read_muli_reg(BMI088_GYRO_CHIP_ID, gyro_buf, 8);
+    if (!BMI088_SPI_IsValid() || gyro_buf[0] != BMI088_GYRO_CHIP_ID_VALUE)
+        return;
+
+    BMI088_accel_read_muli_reg(BMI088_TEMP_M, temp_buf, 2);
+    if (!BMI088_SPI_IsValid())
+        return;
+
+    for (uint8_t i = 0U; i < 3U; i++)
     {
-			bmi088_raw_temp = (int16_t)((buf[1]) << 8) | buf[0];
-			bmi088->Accel[0] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale-bmi088->AccelOffset[0];
-			bmi088_raw_temp = (int16_t)((buf[3]) << 8) | buf[2];
-			bmi088->Accel[1] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale-bmi088->AccelOffset[1];
-			bmi088_raw_temp = (int16_t)((buf[5]) << 8) | buf[4];
-            bmi088->Accel[2] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale; // Keep Z bias unchanged because it includes gravity.
-		}
-		else
-		{
-			bmi088_raw_temp = (int16_t)((buf[1]) << 8) | buf[0];
-			bmi088->Accel[0] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale;
-			bmi088_raw_temp = (int16_t)((buf[3]) << 8) | buf[2];
-			bmi088->Accel[1] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale;
-			bmi088_raw_temp = (int16_t)((buf[5]) << 8) | buf[4];
-			bmi088->Accel[2] = bmi088_raw_temp * BMI088_ACCEL_SEN * bmi088->AccelScale;	
-		}
-		
-        // Read 3-axis angular velocity.
-    BMI088_gyro_read_muli_reg(BMI088_GYRO_CHIP_ID, buf, 8);
-    if (buf[0] == BMI088_GYRO_CHIP_ID_VALUE)
-    {
+        raw = (int16_t)((uint16_t)accel_buf[2U * i + 1U] << 8U |
+                         accel_buf[2U * i]);
+        accel[i] = raw * BMI088_ACCEL_SEN * bmi088->AccelScale;
+        /* Keep Z unchanged: its stationary value includes gravity. */
+        if (caliOffset && i < 2U)
+            accel[i] -= bmi088->AccelOffset[i];
+
+        raw = (int16_t)((uint16_t)gyro_buf[2U * i + 3U] << 8U |
+                         gyro_buf[2U * i + 2U]);
+        gyro[i] = raw * BMI088_GYRO_SEN;
         if (caliOffset)
-        {
-            bmi088_raw_temp = (int16_t)((buf[3]) << 8) | buf[2];
-            bmi088->Gyro[0] = bmi088_raw_temp * BMI088_GYRO_SEN - bmi088->GyroOffset[0];
-            bmi088_raw_temp = (int16_t)((buf[5]) << 8) | buf[4];
-            bmi088->Gyro[1] = bmi088_raw_temp * BMI088_GYRO_SEN - bmi088->GyroOffset[1];
-            bmi088_raw_temp = (int16_t)((buf[7]) << 8) | buf[6];
-            bmi088->Gyro[2] = bmi088_raw_temp * BMI088_GYRO_SEN - bmi088->GyroOffset[2];
-        }
-        else
-        {
-            bmi088_raw_temp = (int16_t)((buf[3]) << 8) | buf[2];
-            bmi088->Gyro[0] = bmi088_raw_temp * BMI088_GYRO_SEN;
-            bmi088_raw_temp = (int16_t)((buf[5]) << 8) | buf[4];
-            bmi088->Gyro[1] = bmi088_raw_temp * BMI088_GYRO_SEN;
-            bmi088_raw_temp = (int16_t)((buf[7]) << 8) | buf[6];
-            bmi088->Gyro[2] = bmi088_raw_temp * BMI088_GYRO_SEN;
-        }
+            gyro[i] -= bmi088->GyroOffset[i];
+
+        if (!isfinite(accel[i]) || !isfinite(gyro[i]))
+            return;
     }
-    BMI088_accel_read_muli_reg(BMI088_TEMP_M, buf, 2);
 
-    bmi088_raw_temp = (int16_t)((buf[0] << 3) | (buf[1] >> 5));
+    raw = (int16_t)((uint16_t)temp_buf[0] << 3U | temp_buf[1] >> 5U);
+    if (raw > 1023)
+        raw -= 2048;
 
-    if (bmi088_raw_temp > 1023)
+    /* Commit only a complete sample. On failure, INS must skip the old data. */
+    for (uint8_t i = 0U; i < 3U; i++)
     {
-        bmi088_raw_temp -= 2048;
+        bmi088->Accel[i] = accel[i];
+        bmi088->Gyro[i] = gyro[i];
     }
-
-    bmi088->Temperature = bmi088_raw_temp * BMI088_TEMP_FACTOR + BMI088_TEMP_OFFSET;
+    bmi088->Temperature = raw * BMI088_TEMP_FACTOR + BMI088_TEMP_OFFSET;
+    bmi088_read_valid = 1U;
 }
 
 #if defined(BMI088_USE_SPI)

@@ -1,6 +1,13 @@
 #include "can_bsp.h"
 #include "fdcan.h"
 #include "robstride_drv.h"
+
+/* Per-frame feedback logging from the FDCAN RX ISR. Off by default: at the
+   500 Hz control rate it produces ~1000 lines/s, far past what UART7 carries.
+   Set to 1 only for short bring-up sessions. */
+#ifndef CAN_FB_DEBUG_LOG
+#define CAN_FB_DEBUG_LOG   0
+#endif
 #include <string.h>
 #include <stdio.h>
 
@@ -142,7 +149,18 @@ static void CAN_ParseMotorFeedback(const FDCAN_RxHeaderTypeDef *rx_header,
     g_motors[idx].fb      = tmp;
     g_motors[idx].valid   = 1U;
     g_motors[idx].last_ms = HAL_GetTick();
+#if CAN_FB_DEBUG_LOG
+    /* Runs in FDCAN ISR context. One line is ~62 chars and the loop emits two
+       per cycle, so the console needs 2 * rate * 62 chars/s while UART7 at
+       115200 carries ~11.5 kchar/s:
+           100 Hz -> ~12.4 kchar/s, already past the wire
+           500 Hz -> ~62 kchar/s, the ring overflows continuously
+       The ring drops rather than blocks (s_tx_dropped in usart.c), so this can
+       never stall the control loop, but the log goes lossy and the memcpy still
+       costs ISR time on every frame. Enable for short bring-up sessions only;
+       for steady-state monitoring call CAN_PrintDebugStats() from a task. */
     printf("[CAN_FB] Motor[%d] vel=%+6.2f tor=%+5.2f pos=%+7.1f (tick=%lu)\r\n", idx, tmp.vel, tmp.tor, tmp.pos, HAL_GetTick());
+#endif
 }
 
 void CAN_PrintDebugStats(void)
@@ -180,13 +198,59 @@ void CAN_MotorFeedback_Get_Idx(uint8_t idx, float *pos, float *vel, float *tor, 
     if (valid) *valid = fresh;
 }
 
-/* ── Reset accumulated continuous angle to 0 ──────────────────────── */
+/* ── Restart the continuous-angle accumulator ──────────────────
+   The accumulator anchors to the wire: pos always stays congruent with pos_raw
+   modulo one 8pi span, so it cannot be forced to an arbitrary number and left
+   there — the next frame would pull it straight back. Clearing init_done
+   instead makes the next frame re-anchor with a zero turn count, so the angle
+   restarts somewhere inside [-4pi, +4pi] at whatever single-turn position the
+   shaft happens to be in. Call rs_ext_set_zero() when the shaft itself is what
+   should read zero. */
 void CAN_MotorFeedback_ResetAccumulated(uint8_t idx)
 {
     if (idx >= CAN_MOTOR_COUNT) return;
-    g_motors[idx].fb.pos          = 0.0f;
-    g_motors[idx].fb.round_cnt    = 0;
-    g_motors[idx].fb.last_raw_pos = g_motors[idx].fb.pos_raw;
+    g_motors[idx].fb.init_done = 0U;
+    g_motors[idx].fb.round_cnt = 0;
+    g_motors[idx].fb.at_rail   = 0U;
+}
+
+/* ── Encoder angle, all three forms ──────────────────────────────
+   pos_raw    what the motor actually puts on the wire: single-turn, wrapping
+              inside [-4pi, +4pi]
+   pos_cont   the accumulator's output, continuous across those wraps
+   round_cnt  wraps counted so far, which is what tells a genuine 8pi move apart
+              from a wrap the accumulator invented or missed
+
+   The angles are gated on `valid` rather than on freshness, matching
+   CAN_MotorFeedback_Get_Idx(): zeroing an accumulator because one frame arrived
+   late would throw away the turn history it exists to keep. `valid` reports
+   freshness separately, so a caller can grey out a stale reading instead.
+
+   Like the other getters here this reads ISR-owned fields with no critical
+   section, so a frame landing mid-call can leave pos_raw one sample ahead of
+   pos_cont. Harmless at display rates; do not build control on it. */
+void CAN_MotorFeedback_GetAngle(uint8_t idx, float *pos_raw, float *pos_cont,
+                                int32_t *round_cnt, uint8_t *valid)
+{
+    if (idx >= CAN_MOTOR_COUNT) return;
+    uint32_t now = HAL_GetTick();
+    MotorSlot_t *s = &g_motors[idx];
+    uint8_t fresh = (s->valid && ((uint32_t)(now - s->last_ms) <= CAN_FB_TIMEOUT_MS)) ? 1U : 0U;
+
+    if (pos_raw)   *pos_raw   = s->valid ? s->fb.pos_raw   : 0.0f;
+    if (pos_cont)  *pos_cont  = s->valid ? s->fb.pos       : 0.0f;
+    if (round_cnt) *round_cnt = s->valid ? s->fb.round_cnt : 0;
+    if (valid)     *valid     = fresh;
+}
+
+/* 1 while the motor's reported angle sits on an end code of its [-4pi, +4pi]
+   window. The continuous angle is riding the reported velocity for as long as
+   this holds, so it is an estimate rather than an encoder reading — worth
+   showing on the bring-up page instead of hiding. */
+uint8_t CAN_MotorFeedback_AtRail(uint8_t idx)
+{
+    if (idx >= CAN_MOTOR_COUNT) return 0U;
+    return (g_motors[idx].valid && g_motors[idx].fb.at_rail) ? 1U : 0U;
 }
 
 /* Per-motor velocity — used by observe_task */

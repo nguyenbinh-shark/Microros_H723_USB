@@ -58,6 +58,20 @@ When CAN transmission issues occur, the firmware prints `[CAN_PHY]` diagnostics 
 
 ---
 
+### Issue E: `/imu/data` exists but has no messages
+
+Keep the board still for at least 4 seconds after boot. Movement restarts the stationary gyro-calibration window; LCD must show `LOCKED`. Check SPI2/BMI088 health and agent time synchronization. Invalid, uncalibrated or stale samples are deliberately suppressed. Subscribe with Best Effort:
+
+```bash
+ros2 topic echo /imu/data --qos-reliability best_effort
+```
+
+### Issue F: Agent repeatedly creates and deletes sessions without a node
+
+This does not establish which initialization step failed. Read UART7 `[ROS_ERR]` for the stage, return code, RCL error and separate micro-ROS/RTOS heap counts. Firmware checks every entity/executor initialization, cleans up completed stages, and zero-initializes handles on each attempt. The USB ring wraps at every boundary, rejects overflow without overwriting unread bytes, and bounds busy/completion waits. Host regression checks cover these faults; validate reconnection on the actual board as well.
+
+---
+
 ## 3. Microcontroller Debugging & Crash Analysis
 
 - **Stack Overflow:** If a FreeRTOS task exceeds its allocated stack, `vApplicationStackOverflowHook` catches it and prints the faulting task name over UART7 before halting.

@@ -28,6 +28,7 @@ graph TD
         Nav2["Navigation / Teleop Node"]
         Agent["micro-ROS Agent (ROS 2 Jazzy)"]
         Nav2 -->|/cmd_vel| Agent
+        Nav2 -->|/cmd_mit| Agent
         Nav2 -->|/motor_enable| Agent
         Agent -->|/motor_fb| Nav2
         Agent -->|/motor_status| Nav2
@@ -65,10 +66,15 @@ graph TD
 
 | Tên Topic | Chiều | Kiểu Dữ Liệu | QoS Reliability | Tần Số | Ý Nghĩa |
 |---|:---:|---|---|:---:|---|
-| [`/cmd_vel`](docs/topics.md#31-cmd_vel-velocity-command) | Sub | `geometry_msgs/msg/Twist` | **Best Effort** | Tối đa 50 Hz | Vận tốc mục tiêu ($v_x\text{ [m/s]}$, $\omega_z\text{ [rad/s]}$) |
-| [`/motor_enable`](docs/topics.md#32-motor_enable-motor-state-control) | Sub | `std_msgs/msg/Bool` | **Reliable** | Theo yêu cầu | Bật (`true`) / Tắt (`false`) công suất động cơ |
-| [`/motor_fb`](docs/topics.md#33-motor_fb-wheel-odometry--joint-feedback) | Pub | `sensor_msgs/msg/JointState` | **Best Effort** | **50 Hz** | Vị trí góc (rad), vận tốc (rad/s), mô-men (Nm) |
-| [`/motor_status`](docs/topics.md#34-motor_status-status-bitmask) | Pub | `std_msgs/msg/UInt8` | **Reliable** | **5 Hz** | Trạng thái lỗi, kết nối CAN và timeout |
+| [`/cmd_vel`](docs/topics.md#31-cmd_vel-velocity-command--velocity-mode) | Sub | `geometry_msgs/msg/Twist` | **Best Effort** | Tối đa 50 Hz | Vận tốc mục tiêu ($v_x\text{ [m/s]}$, $\omega_z\text{ [rad/s]}$), động cơ chạy **Velocity mode** |
+| [`/cmd_mit`](docs/topics.md#32-cmd_mit-mit-command--mit-mode) | Sub | `std_msgs/msg/Float64MultiArray` | **Best Effort** | Tối đa 500 Hz | $[p, v, K_p, K_d, \tau]$ cho từng bánh, động cơ chạy **MIT mode** |
+| [`/cmd_torque`](docs/topics.md#321-cmd_torque-torque-command--mit-mode) | Sub | `std_msgs/msg/Float64MultiArray` | **Best Effort** | Tối đa 500 Hz | Mô-men từng bánh $[\tau_L, \tau_R]$ (Nm), tự chuyển sang **MIT mode** |
+| [`/motor_enable`](docs/topics.md#33-motor_enable-motor-state-control) | Sub | `std_msgs/msg/Bool` | **Reliable** | Theo yêu cầu | Bật (`true`) / Tắt (`false`) công suất động cơ |
+| [`/motor_fb`](docs/topics.md#34-motor_fb-wheel-odometry--joint-feedback) | Pub | `sensor_msgs/msg/JointState` | **Best Effort** | **50 Hz** | Vị trí góc (rad), vận tốc (rad/s), mô-men (Nm) |
+| [`/motor_status`](docs/topics.md#35-motor_status-status-bitmask) | Pub | `std_msgs/msg/UInt8` | **Reliable** | **5 Hz** | Trạng thái lỗi, kết nối CAN và timeout |
+| [`/imu/data`](docs/topics.md#36-imudata-bmi088-imu) | Pub | `sensor_msgs/msg/Imu` | **Best Effort** | Mục tiêu **50 Hz** | Gyro đã bù bias, gia tốc có trọng lực và quaternion tương đối |
+
+Đặt board nằm yên ít nhất 4 giây sau khi khởi động để hiệu chỉnh gyro. `/imu/data` chỉ gửi mẫu đã hiệu chỉnh, hợp lệ, còn mới và có thời gian đồng bộ với agent. Yaw tương đối với lúc khởi động; covariance là giá trị khởi điểm theo datasheet, đặt trong `robot_config.h`. Xem [giao tiếp IMU](docs/topics.md#36-imudata-bmi088-imu) trước khi cấu hình hợp nhất cảm biến.
 
 ### Ý Nghĩa Bitmask `/motor_status`
 
@@ -119,7 +125,7 @@ ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/stm32_robot
 ```bash
 python3 teleop/teleop_key.py
 ```
-> **⚠️ Lưu ý an toàn:** Động cơ mặc định ở trạng thái **DISABLED** khi mới bật nguồn. Nhấn phím **`e`** trong cửa sổ teleop để bật động cơ trước khi di chuyển bằng `w`/`a`/`s`/`d`.
+> **⚠️ Lưu ý an toàn:** Source `motor_task.c` hiện yêu cầu **ENABLED** ngay khi khởi động. Khi chỉ test IMU, ngắt nguồn động cơ và cấp nguồn board bằng USB.
 
 ---
 

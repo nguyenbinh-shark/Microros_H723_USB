@@ -54,11 +54,50 @@
 /* ── Safety ──────────────────────────────────────────────────────────── */
 
 /**
- * @brief Stop the robot if no /cmd_vel arrives within this many milliseconds.
+ * @brief Stop the robot if the active command topic (/cmd_vel, /cmd_mit or
+ *        /cmd_torque) is silent for this many milliseconds.
  * Without it the last commanded velocity is held forever when the ROS 2 agent,
  * the USB link, or the publishing node dies.
  */
 #define CMD_VEL_TIMEOUT_MS   500U
+
+/**
+ * @brief Per-wheel torque limit for /cmd_torque, Nm.
+ * That topic runs with no speed or damping loop, so this clamp is the only
+ * thing bounding acceleration (10 Nm on a 0.05 m wheel is 200 N of push).
+ * Kept well under the 60 Nm protocol range on purpose; raise it only after
+ * testing on the actual RobStride model fitted.
+ */
+#define CMD_TORQUE_MAX_NM    10.0f
+
+/* ── /imu/data covariance (diagonal variances, published in imu_link) ── */
+
+/**
+ * @brief Gyro variance, (rad/s)^2.
+ * BMI088 noise density 0.014 dps/sqrt(Hz) at the configured 230 Hz bandwidth
+ * gives sigma ~0.004 rad/s per sample; 2.5e-5 (sigma 0.005) adds margin for
+ * residual bias. Re-measure on the robot and replace if it differs.
+ */
+#define IMU_GYRO_VARIANCE          2.5e-5
+
+/**
+ * @brief Accelerometer variance, (m/s^2)^2.
+ * Datasheet noise alone is ~0.03 m/s^2 per sample; motor and chassis
+ * vibration dominates on a moving robot, hence sigma 0.1 m/s^2.
+ */
+#define IMU_ACCEL_VARIANCE         1.0e-2
+
+/**
+ * @brief Roll / pitch variance, rad^2 (sigma ~1.8 deg, gravity-referenced).
+ */
+#define IMU_ORIENT_RP_VARIANCE     1.0e-3
+
+/**
+ * @brief Yaw variance, rad^2. Yaw is relative to startup and drifts without
+ * bound (no magnetometer), so it is published as effectively unknown. An EKF
+ * that fuses it anyway will give it almost no weight.
+ */
+#define IMU_ORIENT_YAW_VARIANCE    1.0e6
 
 /* ── Control algorithm tuning ───────────────────────────────────────── */
 

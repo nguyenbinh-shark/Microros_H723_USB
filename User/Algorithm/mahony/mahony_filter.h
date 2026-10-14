@@ -38,6 +38,7 @@ struct MAHONY_FILTER_t
 
     // Output
     float pitch, roll, yaw;         // Euler angles (rad)
+    uint8_t valid;                 // last update completed with finite inputs/state
 
     // function pointers
     void (*mahony_init)(struct MAHONY_FILTER_t *mahony_filter, float Kp, float Ki, float dt);

@@ -63,6 +63,75 @@ void LCD_WR_DATA(uint16_t dat)
 * @details:    	Í¨¹ýµ÷ÓÃLCD_Writ_Busº¯ÊýÏòLCDÐ´Èë¼Ä´æÆ÷µØÖ·¡£
 ************************************************************************
 **/
+/* ---- Bulk writes ---------------------------------------------------
+ * The drawing code thinks in pixels, but the panel must not be written one HAL
+ * call per pixel. HAL_SPI_Transmit() pays a lock, a state check, a timeout
+ * setup and a completion spin no matter how few bytes it carries, and
+ * LCD_Writ_Bus() paid all of that per BYTE -- plus a CS pulse the ST7789 does
+ * not need in the middle of a burst. A full-screen fill is 134,400 bytes.
+ *
+ * These helpers hold CS down for a whole run and hand the peripheral as many
+ * bytes as it will take per call.
+ *
+ * s_burst is shared and unguarded. Every drawing call comes either from main()
+ * before the scheduler starts or from LCD_Task, never from two contexts at
+ * once. Draw from a second task and this buffer is what breaks first.
+ */
+#define LCD_MAX_GLYPH_PX   (16U * 32U)                  /* 16x32, largest font */
+#define LCD_BURST_BYTES    (LCD_MAX_GLYPH_PX * 2U)      /* one glyph, one shot */
+
+static uint8_t s_burst[LCD_BURST_BYTES];
+
+static void LCD_Write_Burst(const uint8_t *buf, uint32_t len)
+{
+	LCD_CS_Clr();
+	while (len)
+	{
+		uint16_t chunk = (len > 0xFFFFU) ? 0xFFFFU : (uint16_t)len;
+		HAL_SPI_Transmit(&hspi1, (uint8_t *)buf, chunk, HAL_MAX_DELAY);
+		buf += chunk;
+		len -= chunk;
+	}
+	LCD_CS_Set();
+}
+
+/* Repeat one colour for px pixels. The pattern is built once and the same
+   buffer re-sent, so clearing the screen costs 132 transfers, not 134,400. */
+static void LCD_Write_Color(uint16_t color, uint32_t px)
+{
+	uint32_t i;
+	uint32_t run = (px < LCD_BURST_BYTES / 2U) ? px : (LCD_BURST_BYTES / 2U);
+
+	for (i = 0; i < run; i++)
+	{
+		s_burst[2U * i]      = (uint8_t)(color >> 8);
+		s_burst[2U * i + 1U] = (uint8_t)color;
+	}
+
+	LCD_CS_Clr();
+	while (px)
+	{
+		uint32_t chunk = (px < run) ? px : run;
+		HAL_SPI_Transmit(&hspi1, s_burst, (uint16_t)(chunk * 2U), HAL_MAX_DELAY);
+		px -= chunk;
+	}
+	LCD_CS_Set();
+}
+
+/* One row-byte of a glyph. Returns 0 for a size with no table; callers screen
+   for that before drawing anything. */
+static uint8_t LCD_FontByte(uint8_t idx, uint16_t i, uint8_t sizey)
+{
+	switch (sizey)
+	{
+		case 12: return ascii_1206[idx][i];
+		case 16: return ascii_1608[idx][i];
+		case 24: return ascii_2412[idx][i];
+		case 32: return ascii_3216[idx][i];
+		default: return 0;
+	}
+}
+
 void LCD_WR_REG(uint8_t dat)
 {
 	LCD_DC_Clr();//Ð´ÃüÁî
@@ -130,16 +199,17 @@ void LCD_Address_Set(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2)
 ************************************************************************
 **/
 void LCD_Fill(uint16_t xsta,uint16_t ysta,uint16_t xend,uint16_t yend,uint16_t color)
-{          
-	uint16_t i,j; 
-	LCD_Address_Set(xsta,ysta,xend-1,yend-1);//ÉèÖÃÏÔÊ¾·¶Î§
-	for(i=ysta;i<yend;i++)
-	{													   	 	
-		for(j=xsta;j<xend;j++)
-		{
-			LCD_WR_DATA(color);
-		}
-	} 					  	    
+{
+	/* xend/yend are exclusive. Clamping them is not cosmetic: the UI draws its
+	   rules as LCD_DrawLine(0, y, LCD_W, y), one pixel past the right edge,
+	   which the old per-pixel loop absorbed silently and an address window
+	   would not. */
+	if (xend > LCD_W) xend = LCD_W;
+	if (yend > LCD_H) yend = LCD_H;
+	if (xend <= xsta || yend <= ysta) return;
+
+	LCD_Address_Set(xsta,ysta,xend-1,yend-1);
+	LCD_Write_Color(color, (uint32_t)(xend - xsta) * (uint32_t)(yend - ysta));
 }
 /**
 ************************************************************************
@@ -167,24 +237,45 @@ void LCD_DrawPoint(uint16_t x,uint16_t y,uint16_t color)
 **/
 void LCD_DrawLine(uint16_t x1,uint16_t y1,uint16_t x2,uint16_t y2,uint16_t color)
 {
-	uint16_t t; 
+	uint16_t t;
 	int xerr=0,yerr=0,delta_x,delta_y,distance;
 	int incx,incy,uRow,uCol;
-	delta_x=x2-x1; //¼ÆËã×ø±êÔöÁ¿ 
+
+	/* Horizontal and vertical runs are the only lines this UI draws -- card
+	   borders and rules -- and LCD_DrawPoint sets a fresh address window for
+	   every pixel, 13 bytes where 2 will do. LCD_Fill sets one and streams.
+	   Coordinates here are inclusive; LCD_Fill's ends are exclusive. */
+	if (y1 == y2)
+	{
+		uint16_t xa = (x1 < x2) ? x1 : x2;
+		uint16_t xb = (x1 < x2) ? x2 : x1;
+		LCD_Fill(xa, y1, (uint16_t)(xb + 1U), (uint16_t)(y1 + 1U), color);
+		return;
+	}
+	if (x1 == x2)
+	{
+		uint16_t ya = (y1 < y2) ? y1 : y2;
+		uint16_t yb = (y1 < y2) ? y2 : y1;
+		LCD_Fill(x1, ya, (uint16_t)(x1 + 1U), (uint16_t)(yb + 1U), color);
+		return;
+	}
+
+	/* Bresenham, unchanged, for the diagonals nothing currently asks for. */
+	delta_x=x2-x1;
 	delta_y=y2-y1;
-	uRow=x1;//»­ÏßÆðµã×ø±ê
+	uRow=x1;
 	uCol=y1;
-	if(delta_x>0)incx=1; //ÉèÖÃµ¥²½·½Ïò 
-	else if (delta_x==0)incx=0;//´¹Ö±Ïß 
+	if(delta_x>0)incx=1;
+	else if (delta_x==0)incx=0;
 	else {incx=-1;delta_x=-delta_x;}
 	if(delta_y>0)incy=1;
-	else if (delta_y==0)incy=0;//Ë®Æ½Ïß 
+	else if (delta_y==0)incy=0;
 	else {incy=-1;delta_y=-delta_y;}
-	if(delta_x>delta_y)distance=delta_x; //Ñ¡È¡»ù±¾ÔöÁ¿×ø±êÖá 
+	if(delta_x>delta_y)distance=delta_x;
 	else distance=delta_y;
 	for(t=0;t<distance+1;t++)
 	{
-		LCD_DrawPoint(uRow,uCol,color);//»­µã
+		LCD_DrawPoint(uRow,uCol,color);
 		xerr+=delta_x;
 		yerr+=delta_y;
 		if(xerr>distance)
@@ -527,25 +618,34 @@ void LCD_ShowChinese32x32(uint16_t x,uint16_t y,uint8_t *s,uint16_t fc,uint16_t 
 void LCD_ShowChar(uint16_t x,uint16_t y,uint8_t num,uint16_t fc,uint16_t bc,uint8_t sizey,uint8_t mode)
 {
 	uint8_t temp,sizex,t,m=0;
-	uint16_t i,TypefaceNum;//Ò»¸ö×Ö·ûËùÕ¼×Ö½Ú´óÐ¡
+	uint16_t i,TypefaceNum;
 	uint16_t x0=x;
+
 	sizex=sizey/2;
 	TypefaceNum=(sizex/8+((sizex%8)?1:0))*sizey;
-	num=num-' ';    //µÃµ½Æ«ÒÆºóµÄÖµ
-	LCD_Address_Set(x,y,x+sizex-1,y+sizey-1);  //ÉèÖÃ¹â±êÎ»ÖÃ 
-	for(i=0;i<TypefaceNum;i++)
-	{ 
-		if(sizey==12)temp=ascii_1206[num][i];		       //µ÷ÓÃ6x12×ÖÌå
-		else if(sizey==16)temp=ascii_1608[num][i];		 //µ÷ÓÃ8x16×ÖÌå
-		else if(sizey==24)temp=ascii_2412[num][i];		 //µ÷ÓÃ12x24×ÖÌå
-		else if(sizey==32)temp=ascii_3216[num][i];		 //µ÷ÓÃ16x32×ÖÌå
-		else return;
-		for(t=0;t<8;t++)
+	num=num-' ';
+
+	if(sizey!=12 && sizey!=16 && sizey!=24 && sizey!=32) return;
+
+	LCD_Address_Set(x,y,x+sizex-1,y+sizey-1);
+
+	if(!mode)
+	{
+		/* Opaque mode -- the one the whole UI uses. Every pixel of the cell is
+		   written, foreground or background, so the glyph can be built in RAM
+		   and pushed in a single transfer: 144 bytes for 6x12, and even 16x32
+		   fits s_burst exactly. */
+		uint32_t px = 0;
+
+		for(i=0;i<TypefaceNum;i++)
 		{
-			if(!mode)//·Çµþ¼ÓÄ£Ê½
+			temp = LCD_FontByte((uint8_t)num, i, sizey);
+			for(t=0;t<8;t++)
 			{
-				if(temp&(0x01<<t))LCD_WR_DATA(fc);
-				else LCD_WR_DATA(bc);
+				uint16_t c = (temp&(0x01<<t)) ? fc : bc;
+				s_burst[2U*px]      = (uint8_t)(c >> 8);
+				s_burst[2U*px + 1U] = (uint8_t)c;
+				px++;
 				m++;
 				if(m%sizex==0)
 				{
@@ -553,19 +653,28 @@ void LCD_ShowChar(uint16_t x,uint16_t y,uint8_t num,uint16_t fc,uint16_t bc,uint
 					break;
 				}
 			}
-			else//µþ¼ÓÄ£Ê½
+		}
+		LCD_Write_Burst(s_burst, px * 2U);
+		return;
+	}
+
+	/* Overlay mode leaves the background untouched, so it has to go pixel by
+	   pixel. Nothing in this project asks for it. */
+	for(i=0;i<TypefaceNum;i++)
+	{
+		temp = LCD_FontByte((uint8_t)num, i, sizey);
+		for(t=0;t<8;t++)
+		{
+			if(temp&(0x01<<t))LCD_DrawPoint(x,y,fc);
+			x++;
+			if((x-x0)==sizex)
 			{
-				if(temp&(0x01<<t))LCD_DrawPoint(x,y,fc);//»­Ò»¸öµã
-				x++;
-				if((x-x0)==sizex)
-				{
-					x=x0;
-					y++;
-					break;
-				}
+				x=x0;
+				y++;
+				break;
 			}
 		}
-	}   	 	  
+	}
 }
 /**
 ************************************************************************
@@ -749,18 +858,10 @@ void LCD_ShowFloatNum1(uint16_t x, uint16_t y, float num, uint8_t len, uint8_t d
 **/
 void LCD_ShowPicture(uint16_t x,uint16_t y,uint16_t length,uint16_t width,const uint8_t pic[])
 {
-	uint16_t i,j;
-	uint32_t k=0;
+	/* pic[] is already big-endian RGB565 in the panel's own order, so it goes
+	   out as one run instead of two HAL calls per pixel. */
 	LCD_Address_Set(x,y,x+length-1,y+width-1);
-	for(i=0;i<length;i++)
-	{
-		for(j=0;j<width;j++)
-		{
-			LCD_WR_DATA8(pic[k*2]);
-			LCD_WR_DATA8(pic[k*2+1]);
-			k++;
-		}
-	}			
+	LCD_Write_Burst(pic, (uint32_t)length * (uint32_t)width * 2U);
 }
 /**
 ************************************************************************

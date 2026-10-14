@@ -96,6 +96,7 @@ User/APP/observe_task.c \
 User/APP/lcd_task.c \
 User/Devices/LCD/lcd.c \
 User/Devices/DRV_Motor/robstride_drv.c \
+User/Devices/DRV_Motor/cybergear_drv.c \
 User/Devices/BMI088/BMI088driver.c \
 User/Devices/BMI088/BMI088Middleware.c \
 User/Algorithm/EKF/QuaternionEKF.c \
@@ -104,7 +105,6 @@ User/Algorithm/mahony/mahony_filter.c \
 User/Algorithm/Kinematics/kinematics.c \
 User/Algorithm/PID/pid.c \
 User/Lib/user_lib.c \
-User/Devices/DRV_Motor/motor_drv.c \
 USB_DEVICE/App/usb_device.c \
 USB_DEVICE/App/usbd_desc.c \
 USB_DEVICE/App/usbd_cdc_if.c \

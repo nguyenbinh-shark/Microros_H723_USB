@@ -54,16 +54,34 @@ If you choose to operate both motors on a shared single CAN bus:
 
 ---
 
-## 3. Adapting to Other Actuators via `motor_drv` Layer
+## 3. Adapting to Other Actuators
 
-The firmware isolates motor-specific communication inside [`User/Devices/DRV_Motor/motor_drv.c`](../User/Devices/DRV_Motor/motor_drv.c). To support another motor protocol (such as DJI RoboMaster M3508/GM6020 or Unitree A1 actuators):
+Motor-specific CAN framing lives in [`User/Devices/DRV_Motor/`](../User/Devices/DRV_Motor/). The directory holds two drivers, and only one of them is live:
 
-1. Implement your motor protocol driver under `User/Devices/DRV_Motor/`.
-2. Map the generic callbacks in `motor_drv.c`:
-   - `motor_enable()`
-   - `motor_disable()`
-   - `motor_send_velocity()`
-   - `motor_parse_feedback()`
+| File | Status | Protocol |
+| :--- | :--- | :--- |
+| [`robstride_drv.c`](../User/Devices/DRV_Motor/robstride_drv.c) | **Active** — what the robot runs on | RobStride, 29-bit extended (`rs_ext_*`) |
+| [`cybergear_drv.c`](../User/Devices/DRV_Motor/cybergear_drv.c) | Reference only, no call sites | Xiaomi CyberGear |
+
+`robstride_drv.c` carries **two** protocols. Section banners in the source mark them:
+
+| Block | Protocol | Called? |
+| :--- | :--- | :--- |
+| `ACTIVE` (`rs_ext_*`) | 29-bit extended — RobStride / CyberGear family | Yes, this is what runs |
+| `MIT 11-BIT MODE` (`rs_mit_cmd`, `rs_enable`, `rs_disable`, `rs_parse_feedback`) | Classic MIT-Cheetah: 11-bit standard ID, `P16\|V12\|Kp12\|Kd12\|T12` packing, `FF..FC` / `FF..FD` enable/disable | No — working code, just not wired up |
+
+The MIT block is a complete second driver, not dead leftovers: use it for MIT-Cheetah / Damiao actuators, or RobStride units switched into MIT mode. Switching to it means changing the call sites in `motor_task.c` and `can_bsp.c`, not editing the block.
+
+Read the banners before copying a constant: `RS_*` (MIT) and `RS_EXT_*` (29-bit) look alike but differ (V 33 vs 20 rad/s, KP 500 vs 5000, KD 5 vs 100). Note also that CyberGear has no 11-bit mode at all — its protocol is 29-bit only, so "CyberGear" and "MIT 11-bit" are never the same thing.
+
+There is no generic dispatch layer: the firmware calls the RobStride driver directly, at exactly two seams.
+
+1. Implement your protocol driver under `User/Devices/DRV_Motor/` and add it to `C_SOURCES` in the [`Makefile`](../Makefile). Use `cybergear_drv.c` as the shape of a second driver.
+2. Swap the **command path** in [`User/APP/motor_task.c`](../User/APP/motor_task.c) — replace these three calls, made on `&hfdcan1` (left) and `&hfdcan3` (right):
+   - `rs_ext_enable()`
+   - `rs_ext_disable()`
+   - `rs_ext_control_cmd()` — called once per motor at 100 Hz
+3. Swap the **feedback path** in [`User/Bsp/can_bsp.c`](../User/Bsp/can_bsp.c) — `CAN_ParseMotorFeedback()` calls `rs_ext_parse_feedback()` to fill a per-motor slot. Keep the slot convention (`idx 0` = left/FDCAN1, `idx 1` = right/FDCAN3) and the rest of the stack (`CAN_MotorFeedback_Get_Idx()`, `CAN_GetMotorVel()`, odometry, diagnostics) needs no change.
 3. Ensure feedback positions and velocities are converted into standard SI units:
    - Position: Continuous unwrapped radians ($\text{rad}$).
    - Velocity: Hub angular velocity ($\text{rad/s}$).

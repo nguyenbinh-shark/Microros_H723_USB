@@ -47,7 +47,13 @@ void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  /* SPI1 kernel clock is PLL1Q = 48 MHz (HSE 24 / M2 * N16 / Q4); the boot log
+     prints it as KernelClk. /32 was 1.5 MHz, at which one full-screen fill is
+     134,400 bytes = 717 ms of wire time -- the frame rate WAS the baud rate.
+     /4 is 12 MHz, inside the ST7789 66 ns minimum write cycle (~15 MHz).
+     /2 is 24 MHz and past that number; panels usually take it, but that is a
+     bench experiment, not a default. */
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_4;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;

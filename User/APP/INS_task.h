@@ -74,6 +74,26 @@ typedef struct
 
 extern INS_t INS;
 
+/* Coherent sensor-frame sample for cross-task consumers.  Quaternion is w,x,y,z;
+ * gyro is rad/s and acceleration is m/s^2 INCLUDING gravity.  sample_tick_ms
+ * uses HAL_GetTick(), not ROS epoch time.  gyro_bias is the residual correction
+ * learned at startup on top of the BMI088 driver's configured offsets. */
+typedef struct
+{
+    float q[4];
+    float gyro[3];
+    float accel[3];
+    float gyro_bias[3];
+    uint32_t sample_tick_ms;
+    uint32_t sequence;
+    uint8_t calibrated;
+    uint8_t valid;
+} INS_Snapshot_t;
+
+/* Task context only: copies the latest sample under a short critical section.
+ * Returns sample validity; callers must also check calibrated and sample age. */
+uint8_t INS_GetSnapshot(INS_Snapshot_t *out);
+
 extern void INS_Init(void);
 extern void INS_task(void);
 

@@ -17,6 +17,33 @@ extern "C" {
 #define SBUS_CHANNEL_MIN   364
 #define SBUS_CHANNEL_MID   1024
 #define SBUS_CHANNEL_MAX   1684
+#define SBUS_CHANNEL_RANGE 660                    /* MID..MAX half-span             */
+#define SBUS_DEADBAND      35                     /* Ignore |raw| below this        */
+
+/* ── Stick → motion mapping ─────────────────────────────────────────────────
+ * Channel order is not the same on every transmitter. Change the two indices
+ * below if the sticks come out swapped (horizontal stick drives forward), and
+ * flip the SIGN macros if an axis moves the right stick the wrong way.
+ *   RC_CH_VX = channel of the VERTICAL stick axis  (forward / backward)
+ *   RC_CH_WZ = channel of the HORIZONTAL stick axis (steering)
+ */
+#define RC_CH_VX           0                      /* CH1 = vertical / throttle      */
+#define RC_CH_WZ           1                      /* CH2 = horizontal / steering     */
+#define RC_VX_SIGN         (-1)                   /* -1 = this radio sends stick-up low  */
+#define RC_WZ_SIGN         (+1)                   /* +1 = this radio sends stick-left low */
+
+/* ── Motor arm button ───────────────────────────────────────────────────────
+ * A channel on the transmitter that enables / disables both wheels, mapped to
+ * the same path as the /motor_enable topic.
+ *   RC_ARM_TOGGLE 1 = momentary button: every press flips the armed state.
+ *   RC_ARM_TOGGLE 0 = 2-position switch: HIGH = armed, LOW = disarmed.
+ * The two thresholds leave a dead zone in the middle so a noisy channel cannot
+ * chatter between the two states.
+ */
+#define RC_CH_ARM          5                      /* CH6                            */
+#define RC_ARM_HIGH        1350                   /* above = pressed / switch high  */
+#define RC_ARM_LOW         700                    /* below = released / switch low  */
+#define RC_ARM_TOGGLE      1
 
 typedef enum {
     RC_MODE_AUTO_ROS2 = 0,   /* Autonomous Nav2 / micro-ROS /cmd_vel mode */
@@ -60,6 +87,17 @@ RC_ControlMode_t sbus_get_control_mode(void);
  * @param out_wz Pointer to output angular velocity (rad/s)
  */
 void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_wz);
+
+/**
+ * @brief Edge-process the arm button. Call once per control cycle, from ONE
+ *        task only — each press must be consumed exactly once.
+ */
+void sbus_arm_update(void);
+
+/**
+ * @brief Latched armed state. Pure read, safe from any task.
+ */
+bool sbus_is_armed(void);
 
 #ifdef __cplusplus
 }

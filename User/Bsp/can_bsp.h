@@ -22,6 +22,14 @@ void FDCAN3_Config(void);
 void CAN_MotorFeedback_Get(float *pos, float *vel, uint8_t *motor_id, uint8_t *valid);
 void CAN_MotorFeedback_Get_Idx(uint8_t idx, float *pos, float *vel, float *tor, uint8_t *valid);
 void CAN_MotorFeedback_ResetAccumulated(uint8_t idx);
+/* Encoder angle in all three forms the accumulator deals in — raw single-turn,
+   continuous multi-turn, and the wrap count relating them. For display and
+   bring-up; the control path only ever needs the continuous value. */
+void CAN_MotorFeedback_GetAngle(uint8_t idx, float *pos_raw, float *pos_cont,
+                                int32_t *round_cnt, uint8_t *valid);
+/* 1 while the motor's reported angle is pinned at an end of its [-4pi, +4pi]
+   window, which is when the continuous angle is being carried on velocity. */
+uint8_t CAN_MotorFeedback_AtRail(uint8_t idx);
 float CAN_GetMotorVel(uint8_t id);   /* id=1 left, id=2 right. Returns 0 if stale. */
 
 /* CAN ID a slot accepts feedback from (idx 0 = left/FDCAN1, 1 = right/FDCAN3) */

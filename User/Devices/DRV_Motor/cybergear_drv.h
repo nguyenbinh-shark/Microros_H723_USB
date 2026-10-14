@@ -1,5 +1,31 @@
-#ifndef __MOTOR_DRV_H__
-#define __MOTOR_DRV_H__
+/**
+ * @file  cybergear_drv.h
+ * @brief Xiaomi CyberGear actuator driver — REFERENCE ONLY, NOT USED BY THE FIRMWARE.
+ *
+ * The robot drives both wheels through robstride_drv.c (RobStride, 29-bit
+ * extended protocol). Nothing in the project includes this header — it is kept
+ * as a worked example of the CyberGear frame layout for anyone porting to that
+ * actuator. The .c still builds, but -ffunction-sections + --gc-sections drop
+ * every symbol from the final image, so it costs no flash.
+ *
+ * @note CyberGear speaks 29-bit extended frames EXCLUSIVELY. The protocol has no
+ *       11-bit / standard-ID mode: comm type, host ID and target ID are all packed
+ *       into the extended identifier itself (see cybergear_build_extid below).
+ *       MIT 11-bit framing is a different protocol and lives in its own block in
+ *       robstride_drv.c — the two are unrelated, do not mix them up.
+ *
+ * @warning Do not wire this in as-is. The senders here build the 29-bit ID
+ *          correctly, then hand it to canx_send_data(), which transmits with
+ *          FDCAN_STANDARD_ID and takes `id` as uint16_t. The identifier is
+ *          truncated and the frame leaves as a standard frame no CyberGear will
+ *          ever answer. Point those three calls at canx_send_ext_data() instead,
+ *          the way robstride_drv.c does.
+ *
+ * @note All public symbols carry the cybergear_ prefix so they never read as the
+ *       active wheel-motor API. See docs/porting.md for the porting procedure.
+ */
+#ifndef __CYBERGEAR_DRV_H__
+#define __CYBERGEAR_DRV_H__
 #include "main.h"
 #include "fdcan.h"
 #include "can_bsp.h"
@@ -48,18 +74,18 @@ typedef struct
 	float Kd;
 	float Tmos;
 	float Tcoil;
-} motor_fbpara_t;
+} cybergear_fbpara_t;
 
 typedef struct
 {
 	uint16_t mode;
-	motor_fbpara_t para;	
-} Wheel_Motor_t;
+	cybergear_fbpara_t para;	
+} cybergear_motor_t;
 
-void cybergear_fbdata(Wheel_Motor_t *motor, uint8_t *rx_data, uint32_t data_len);
-void enable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id);
-void disable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id);
-void mit_ctrl(hcan_t *hcan, uint32_t motor_id, float pos, float vel, float kp, float kd, float torq);
+void cybergear_fbdata(cybergear_motor_t *motor, uint8_t *rx_data, uint32_t data_len);
+void cybergear_enable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id);
+void cybergear_disable_motor_mode(hcan_t *hcan, uint32_t motor_id, uint32_t mode_id);
+void cybergear_mit_ctrl(hcan_t *hcan, uint32_t motor_id, float pos, float vel, float kp, float kd, float torq);
 
-#endif /* __MOTOR_DRV_H__ */
+#endif /* __CYBERGEAR_DRV_H__ */
 

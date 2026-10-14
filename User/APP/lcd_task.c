@@ -26,6 +26,9 @@
 
 #define TOTAL_PAGES          4
 
+/* Display only — every angle in the firmware is carried in radians. */
+#define RAD_TO_DEG           57.2957795f
+
 static uint8_t s_current_page = 0;
 static uint8_t s_last_drawn_page = 0xFF;
 
@@ -108,24 +111,37 @@ static void LCD_RenderPageBackground(uint8_t page)
 
         /* ── PAGE 1: DUAL MOTORS & ODOMETRY ───────────────────────── */
         case 1:
+        {
+            char kin[40];
             LCD_DrawHeader("MOTOR & ODOM [2/4]");
-            LCD_DrawCard(2, 25, 276, 62, "LEFT WHEEL MOTOR (FDCAN1 ID 1)", UI_COLOR_BORDER);
-            LCD_ShowString(6, 41, (const uint8_t *)"VEL:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 56, (const uint8_t *)"TOR:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(144, 56, (const uint8_t *)"POS:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 71, (const uint8_t *)"BUS: FDCAN1 1M | STATUS: RUN", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
 
-            LCD_DrawCard(2, 89, 276, 62, "RIGHT WHEEL MOTOR (FDCAN3 ID 1)", UI_COLOR_BORDER);
-            LCD_ShowString(6, 105, (const uint8_t *)"VEL:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 120, (const uint8_t *)"TOR:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(144, 120, (const uint8_t *)"POS:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 135, (const uint8_t *)"BUS: FDCAN3 1M | STATUS: RUN", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+            /* Each motor card carries four rows now that the encoder angle is
+               shown in both forms, so the cards grow 62 -> 68 px. The odometry
+               card pays for that by giving up its static TRACK/RADIUS row: the
+               pair moved into the card title and is now formatted from the
+               config macros, so it can no longer drift from the kinematics the
+               rest of the page is computed with. */
+            LCD_DrawCard(2, 25, 276, 68, "LEFT WHEEL MOTOR (FDCAN1 ID 1)", UI_COLOR_BORDER);
+            LCD_ShowString(6, 40, (const uint8_t *)"VEL:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 53, (const uint8_t *)"TOR:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(144, 53, (const uint8_t *)"RAW:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 66, (const uint8_t *)"ANG:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 79, (const uint8_t *)"BUS: FDCAN1 1M | STATUS: RUN", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
 
-            LCD_DrawCard(2, 153, 276, 62, "DIFF KINEMATICS & ODOM", UI_COLOR_BORDER);
-            LCD_ShowString(6, 169, (const uint8_t *)"TRACK: 0.30m  RADIUS: 0.05m", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 184, (const uint8_t *)"ODOM Vx :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            LCD_ShowString(6, 199, (const uint8_t *)"ODOM Wz :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            break;
+            LCD_DrawCard(2, 94, 276, 68, "RIGHT WHEEL MOTOR (FDCAN3 ID 1)", UI_COLOR_BORDER);
+            LCD_ShowString(6, 109, (const uint8_t *)"VEL:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 122, (const uint8_t *)"TOR:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(144, 122, (const uint8_t *)"RAW:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 135, (const uint8_t *)"ANG:", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 148, (const uint8_t *)"BUS: FDCAN3 1M | STATUS: RUN", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+
+            snprintf(kin, sizeof(kin), "DIFF KINEMATICS (T:%.2fm R:%.2fm)",
+                     (double)WHEEL_BASE, (double)WHEEL_RADIUS);
+            LCD_DrawCard(2, 163, 276, 52, kin, UI_COLOR_BORDER);
+            LCD_ShowString(6, 180, (const uint8_t *)"ODOM Vx :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(6, 195, (const uint8_t *)"ODOM Wz :", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+        }
+        break;
 
         /* ── PAGE 2: IMU & KALMAN OBSERVER ────────────────────────── */
         case 2:
@@ -181,7 +197,8 @@ void LCD_Debug_Init(void)
 
 void LCD_Debug_Update(void)
 {
-    char buf[48];
+    char buf[64];   /* the continuous-angle row runs ~34 chars once both
+                       units and the wrap count are on it */
     CommMetrics_t metrics;
     comm_metrics_get(&metrics);
 
@@ -196,14 +213,19 @@ void LCD_Debug_Update(void)
         s_current_page = (s_current_page + TOTAL_PAGES - 1) % TOTAL_PAGES;
     }
 
-    /* Print diagnostic to serial terminal every 1s */
-    static uint32_t last_diag_tick = 0;
-    uint32_t now_tick = HAL_GetTick();
-    if ((now_tick - last_diag_tick) >= 1000U)
+    /* This was a 1 Hz dump of the page number and the navkey ADC reading, both
+       of which are already on the screen in front of you. Only the SPI error
+       code says anything the panel cannot, so it is all that reaches the wire,
+       and only when it changes — which for a healthy panel is never. */
+    static uint32_t last_spi_err = 0U;
+    if (hspi1.ErrorCode != last_spi_err)
     {
-        last_diag_tick = now_tick;
-        printf("[LCD_DIAG] Page=%u, RawADC=%u, SPI1_Err=0x%08lX\r\n", 
-               s_current_page, NavKey_GetRawADC(), hspi1.ErrorCode);
+        last_spi_err = hspi1.ErrorCode;
+        if (hspi1.ErrorCode != 0U)
+        {
+            printf("[LCD_ERR] SPI1 ErrorCode=0x%08lX (page=%u, navkey ADC=%u)\r\n",
+                   hspi1.ErrorCode, s_current_page, NavKey_GetRawADC());
+        }
     }
 
     /* 2. Redraw Page Background if Page Changed */
@@ -257,7 +279,9 @@ void LCD_Debug_Update(void)
 
             if (sbus_is_online()) {
                 RC_ControlMode_t m = sbus_get_control_mode();
-                if (m == RC_MODE_MANUAL_RC) {
+                if (!sbus_is_armed()) {
+                    LCD_ShowString(172, 66, (const uint8_t *)"RC:DISARM", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+                } else if (m == RC_MODE_MANUAL_RC) {
                     LCD_ShowString(172, 66, (const uint8_t *)"RC:MANUAL", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
                 } else if (m == RC_MODE_AUTO_ROS2) {
                     LCD_ShowString(172, 66, (const uint8_t *)"RC:AUTO  ", UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
@@ -321,44 +345,62 @@ void LCD_Debug_Update(void)
             CAN_BusMetrics_t can_m;
             CAN_GetMetrics(&can_m);
 
+            /* RAW is the single-turn angle the motor puts on the wire; ANG is
+               the continuous angle the accumulator builds from it. They are
+               shown together because that is what makes a wrap fault visible:
+               RAW is expected to jump the full [-4pi, +4pi] span, ANG is not,
+               and n counts the wraps that reconcile the two. */
+            float ang_raw[2], ang_cont[2];
+            int32_t ang_turn[2];
+            CAN_MotorFeedback_GetAngle(0, &ang_raw[0], &ang_cont[0], &ang_turn[0], NULL);
+            CAN_MotorFeedback_GetAngle(1, &ang_raw[1], &ang_cont[1], &ang_turn[1], NULL);
+
             float v_l = m_vel[0] * WHEEL_RADIUS;
             snprintf(buf, sizeof(buf), "%+6.2f rad/s  (%+5.2f m/s)", m_vel[0], v_l);
-            LCD_ShowString(36, 41, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 40, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+5.2f Nm", m_tor[0]);
-            LCD_ShowString(36, 56, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            snprintf(buf, sizeof(buf), "%+7.1f rad", m_pos[0]);
-            LCD_ShowString(174, 56, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 53, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            snprintf(buf, sizeof(buf), "%+6.2f rad%s", (double)ang_raw[0],
+                     CAN_MotorFeedback_AtRail(0) ? " SAT" : "    ");
+            LCD_ShowString(174, 53, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            snprintf(buf, sizeof(buf), "%+9.2f rad %+9.1f deg n=%+4ld",
+                     (double)ang_cont[0], (double)(ang_cont[0] * RAD_TO_DEG), (long)ang_turn[0]);
+            LCD_ShowString(36, 66, (const uint8_t *)buf, m_valid[0] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
 
             if (m_valid[0]) {
                 snprintf(buf, sizeof(buf), "BUS: CAN1 | RX:%-5lu | STATUS: OK ", can_m.can1_rx_cnt);
-                LCD_ShowString(6, 71, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+                LCD_ShowString(6, 79, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
             } else {
                 snprintf(buf, sizeof(buf), "BUS: CAN1 | RX:%-5lu | OFFLINE    ", can_m.can1_rx_cnt);
-                LCD_ShowString(6, 71, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+                LCD_ShowString(6, 79, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
             }
 
             float v_r = m_vel[1] * WHEEL_RADIUS;
             snprintf(buf, sizeof(buf), "%+6.2f rad/s  (%+5.2f m/s)", m_vel[1], v_r);
-            LCD_ShowString(36, 105, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 109, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_ACCENT : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+5.2f Nm", m_tor[1]);
-            LCD_ShowString(36, 120, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
-            snprintf(buf, sizeof(buf), "%+7.1f rad", m_pos[1]);
-            LCD_ShowString(174, 120, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(36, 122, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_YELLOW : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            snprintf(buf, sizeof(buf), "%+6.2f rad%s", (double)ang_raw[1],
+                     CAN_MotorFeedback_AtRail(1) ? " SAT" : "    ");
+            LCD_ShowString(174, 122, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+            snprintf(buf, sizeof(buf), "%+9.2f rad %+9.1f deg n=%+4ld",
+                     (double)ang_cont[1], (double)(ang_cont[1] * RAD_TO_DEG), (long)ang_turn[1]);
+            LCD_ShowString(36, 135, (const uint8_t *)buf, m_valid[1] ? UI_COLOR_WHITE : UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
 
             if (m_valid[1]) {
                 snprintf(buf, sizeof(buf), "BUS: CAN3 | RX:%-5lu | STATUS: OK ", can_m.can3_rx_cnt);
-                LCD_ShowString(6, 135, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
+                LCD_ShowString(6, 148, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
             } else {
                 snprintf(buf, sizeof(buf), "BUS: CAN3 | RX:%-5lu | OFFLINE    ", can_m.can3_rx_cnt);
-                LCD_ShowString(6, 135, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+                LCD_ShowString(6, 148, (const uint8_t *)buf, UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
             }
 
             float forward_v = (v_r + v_l) / 2.0f;
             float diff_w    = (v_r - v_l) / WHEEL_BASE;
             snprintf(buf, sizeof(buf), "%+6.3f m/s (Target: %+5.2f)", forward_v, g_cmd_velocity);
-            LCD_ShowString(70, 184, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(70, 180, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
             snprintf(buf, sizeof(buf), "%+6.3f rad/s (Target: %+5.2f)", diff_w, g_cmd_yaw_rate);
-            LCD_ShowString(70, 199, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
+            LCD_ShowString(70, 195, (const uint8_t *)buf, UI_COLOR_WHITE, UI_COLOR_PANEL, 12, 0);
 
             LCD_ShowString(6, 224, (const uint8_t *)"PAGE: MOTOR & ODOM", UI_COLOR_WHITE, 0x0128, 12, 0);
             snprintf(buf, sizeof(buf), "NAV: [<-/->]");
@@ -423,10 +465,14 @@ void LCD_Debug_Update(void)
             LCD_ShowString(84, 101, (const uint8_t *)buf, (metrics.rx_pending_bytes == 0 ? UI_COLOR_GREEN : UI_COLOR_ORANGE), UI_COLOR_PANEL, 12, 0);
 
             if (sbus_is_online()) {
-                snprintf(buf, sizeof(buf), "ONLINE (C1:%4u C2:%4u)", sbus.ch[0], sbus.ch[1]);
+                /* Raw stick channels — green row means the link is up. Wiggle
+                 * one stick at a time to see which index it drives, then set
+                 * RC_CH_VX / RC_CH_WZ in bsp_sbus.h to match. */
+                snprintf(buf, sizeof(buf), "C1:%4u C2:%4u C3:%4u C4:%4u",
+                         sbus.ch[0], sbus.ch[1], sbus.ch[2], sbus.ch[3]);
                 LCD_ShowString(84, 196, (const uint8_t *)buf, UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
             } else {
-                LCD_ShowString(84, 196, (const uint8_t *)"NO SIGNAL (OFFLINE)    ", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
+                LCD_ShowString(84, 196, (const uint8_t *)"NO SIGNAL (OFFLINE)            ", UI_COLOR_MUTED, UI_COLOR_PANEL, 12, 0);
             }
 
             LCD_ShowString(6, 224, (const uint8_t *)"PAGE: SYSTEM & TELEM", UI_COLOR_WHITE, 0x0128, 12, 0);

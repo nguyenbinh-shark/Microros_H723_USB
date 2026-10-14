@@ -1,175 +1,203 @@
 #include <rmw_microros/rmw_microros.h>
-
 #include "main.h"
 #include "cmsis_os.h"
+#include "task.h"
 #include "usbd_cdc_if.h"
 #include "usbd_cdc.h"
-
-#include <unistd.h>
-#include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 
 #ifdef RMW_UXRCE_TRANSPORT_CUSTOM
 
-// --- USB CDC Handles ---
 extern USBD_CDC_ItfTypeDef USBD_Interface_fops_HS;
 extern USBD_HandleTypeDef hUsbDeviceHS;
 
-// --- Reimplemented USB CDC callbacks ---
-static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum);
-static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length);
-static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len);
+#define USB_BUFFER_SIZE 2048U
+#define WRITE_TIMEOUT_MS 100U
+/* Framing can escape every byte. Keep the buffer alive even if completion
+ * times out: USB may still be reading it after the caller returns. */
+#define USB_TX_BUFFER_SIZE (2U * RMW_UXRCE_MAX_TRANSPORT_MTU + 32U)
 
-// Line coding: Rate: 115200bps; CharFormat: 1 Stop bit; Parity: None; Data: 8 bits
 static uint8_t line_coding[7] = {0x00, 0xC2, 0x01, 0x00, 0x00, 0x00, 0x08};
+static uint8_t storage_buffer[USB_BUFFER_SIZE];
+static uint8_t tx_buffer[USB_TX_BUFFER_SIZE];
+static volatile size_t it_head;
+static volatile size_t it_tail;
+static volatile bool rx_overflow;
+static volatile bool g_write_complete;
+static bool initialized;
 
-// --- micro-ROS Transports ---
-#define USB_BUFFER_SIZE 2048
-#define WRITE_TIMEOUT_MS 20U
-
-volatile uint8_t storage_buffer[USB_BUFFER_SIZE] = {0};
-volatile size_t it_head = 0;
-volatile size_t it_tail = 0;
-volatile bool g_write_complete = false;
-bool initialized = false;
-
-// Transmission completed callback
-static int8_t CDC_TransmitCplt_HS(uint8_t *Buf, uint32_t *Len, uint8_t epnum)
+static int8_t CDC_TransmitCplt_HS(uint8_t *buf, uint32_t *len, uint8_t epnum)
 {
-    (void) Buf;
-    (void) Len;
-    (void) epnum;
-
+    (void)buf;
+    (void)len;
+    (void)epnum;
     g_write_complete = true;
     return USBD_OK;
 }
 
-// USB CDC requests callback
-static int8_t CDC_Control_HS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
+static int8_t CDC_Control_HS(uint8_t cmd, uint8_t *buf, uint16_t length)
 {
-    switch(cmd)
+    if ((cmd == CDC_SET_LINE_CODING || cmd == CDC_GET_LINE_CODING) &&
+        length >= sizeof(line_coding))
     {
-        case CDC_SET_LINE_CODING:
-        memcpy(line_coding, pbuf, sizeof(line_coding));
-        break;
-
-        case CDC_GET_LINE_CODING:
-        memcpy(pbuf, line_coding, sizeof(line_coding));
-        break;
-
-        case CDC_SEND_ENCAPSULATED_COMMAND:
-        case CDC_GET_ENCAPSULATED_RESPONSE:
-        case CDC_SET_COMM_FEATURE:
-        case CDC_GET_COMM_FEATURE:
-        case CDC_CLEAR_COMM_FEATURE:
-        case CDC_SET_CONTROL_LINE_STATE:
-        case CDC_SEND_BREAK:
-        default:
-            break;
+        if (cmd == CDC_SET_LINE_CODING)
+            memcpy(line_coding, buf, sizeof(line_coding));
+        else
+            memcpy(buf, line_coding, sizeof(line_coding));
     }
-
     return USBD_OK;
 }
 
-// Data received callback
-static int8_t CDC_Receive_HS(uint8_t* Buf, uint32_t *Len)
+static int8_t CDC_Receive_HS(uint8_t *buf, uint32_t *len)
 {
-	USBD_CDC_SetRxBuffer(&hUsbDeviceHS, &Buf[0]);
+    size_t tail = it_tail;
+    size_t head = it_head;
+    size_t used = (tail + USB_BUFFER_SIZE - head) % USB_BUFFER_SIZE;
+    size_t free_bytes = USB_BUFFER_SIZE - 1U - used;
 
-    // Circular buffer
-    if ((it_tail + *Len) > USB_BUFFER_SIZE)
-	{
-        size_t first_section = USB_BUFFER_SIZE - it_tail;
-        size_t second_section = *Len - first_section;
-
-		memcpy((void*) &storage_buffer[it_tail] , Buf, first_section);
-		memcpy((void*) &storage_buffer[0] , Buf, second_section);
-        it_tail = second_section;
-	}
+    /* Reserve one slot to distinguish full from empty. Drop an overflowing
+     * packet as a whole rather than silently overwriting unread XRCE bytes. */
+    if (*len > free_bytes)
+    {
+        rx_overflow = true;
+    }
     else
     {
-		memcpy((void*) &storage_buffer[it_tail] , Buf, *Len);
-		it_tail += *Len;
+        for (uint32_t i = 0; i < *len; ++i)
+        {
+            storage_buffer[tail] = buf[i];
+            tail = (tail + 1U) % USB_BUFFER_SIZE;
+        }
+        __DMB();
+        it_tail = tail;
     }
-
-	USBD_CDC_ReceivePacket(&hUsbDeviceHS);
-
-	return (USBD_OK);
+    USBD_CDC_SetRxBuffer(&hUsbDeviceHS, buf);
+    USBD_CDC_ReceivePacket(&hUsbDeviceHS);
+    return USBD_OK;
 }
 
-bool cubemx_transport_open(struct uxrCustomTransport * transport){
+static void reset_rx(void)
+{
+    taskENTER_CRITICAL();
+    it_head = 0U;
+    it_tail = 0U;
+    rx_overflow = false;
+    taskEXIT_CRITICAL();
+}
 
+bool cubemx_transport_open(struct uxrCustomTransport *transport)
+{
+    (void)transport;
     if (!initialized)
     {
-        // USB is initialized on generated main code: Replace default callbacks here
         USBD_Interface_fops_HS.Control = CDC_Control_HS;
         USBD_Interface_fops_HS.Receive = CDC_Receive_HS;
         USBD_Interface_fops_HS.TransmitCplt = CDC_TransmitCplt_HS;
         initialized = true;
     }
-
+    reset_rx();
     return true;
 }
 
-bool cubemx_transport_close(struct uxrCustomTransport * transport){
+bool cubemx_transport_close(struct uxrCustomTransport *transport)
+{
+    (void)transport;
+    reset_rx();
+    /* Do not modify tx_buffer: an outstanding USB transfer owns it. */
     return true;
 }
 
-size_t cubemx_transport_write(struct uxrCustomTransport* transport, const uint8_t * buf, size_t len, uint8_t * err){
-	uint8_t ret = CDC_Transmit_HS((uint8_t*)buf, len);
+static bool usb_tx_idle(void)
+{
+    USBD_CDC_HandleTypeDef *cdc = (USBD_CDC_HandleTypeDef *)hUsbDeviceHS.pClassData;
+    return cdc != NULL && cdc->TxState == 0U;
+}
 
-	if (USBD_OK != ret)
-	{
-		return 0;
-	}
-
-    int64_t start = uxr_millis();
-    while(!g_write_complete && (uxr_millis() -  start) < WRITE_TIMEOUT_MS)
+size_t cubemx_transport_write(struct uxrCustomTransport *transport,
+                             const uint8_t *buf, size_t len, uint8_t *err)
+{
+    (void)transport;
+    if (err != NULL) *err = 0U;
+    if (len == 0U) return 0U;
+    if (buf == NULL || len > sizeof(tx_buffer))
     {
-    	vTaskDelay( 1 / portTICK_PERIOD_MS);
+        if (err != NULL) *err = 1U;
+        return 0U;
     }
 
-    size_t writed = g_write_complete ? len : 0;
-    g_write_complete = false;
-
-	return writed;
-}
-
-size_t cubemx_transport_read(struct uxrCustomTransport* transport, uint8_t* buf, size_t len, int timeout, uint8_t* err){
-
     int64_t start = uxr_millis();
-    size_t readed = 0;
-
+    uint8_t ret = USBD_BUSY;
     do
     {
-        if (it_head != it_tail)
+        if (hUsbDeviceHS.dev_state != USBD_STATE_CONFIGURED) break;
+        if (usb_tx_idle())
         {
-            while ((it_head != it_tail) && (readed < len)){
-                buf[readed] = storage_buffer[it_head];
-                it_head = (it_head + 1) % USB_BUFFER_SIZE;
-                readed++;
-            }
-
-            break;
+            memcpy(tx_buffer, buf, len);
+            g_write_complete = false;
+            ret = CDC_Transmit_HS(tx_buffer, (uint16_t)len);
+            if (ret != USBD_BUSY) break;
         }
+        osDelay(1U);
+    } while ((uxr_millis() - start) < WRITE_TIMEOUT_MS);
 
-       vTaskDelay( 1 / portTICK_PERIOD_MS );
-    } while ((uxr_millis() -  start) < timeout);
+    if (ret == USBD_OK)
+    {
+        while (!g_write_complete && !usb_tx_idle() &&
+               hUsbDeviceHS.dev_state == USBD_STATE_CONFIGURED &&
+               (uxr_millis() - start) < WRITE_TIMEOUT_MS)
+        {
+            osDelay(1U);
+        }
+        if (hUsbDeviceHS.dev_state == USBD_STATE_CONFIGURED &&
+            (g_write_complete || usb_tx_idle())) return len;
+    }
 
-    return readed;
+    if (err != NULL) *err = 1U;
+    return 0U;
+}
+
+size_t cubemx_transport_read(struct uxrCustomTransport *transport,
+                            uint8_t *buf, size_t len, int timeout, uint8_t *err)
+{
+    (void)transport;
+    if (err != NULL) *err = 0U;
+    if (buf == NULL || len == 0U) return 0U;
+
+    int64_t start = uxr_millis();
+    do
+    {
+        /* USB interrupt is the sole producer; this task is the sole consumer.
+         * Publish head only after copying out each available batch. */
+        size_t head = it_head;
+        size_t tail = it_tail;
+        __DMB();
+        size_t count = 0U;
+        while (head != tail && count < len)
+        {
+            buf[count++] = storage_buffer[head];
+            head = (head + 1U) % USB_BUFFER_SIZE;
+        }
+        __DMB();
+        it_head = head;
+
+        taskENTER_CRITICAL();
+        bool overflow = rx_overflow;
+        rx_overflow = false;
+        taskEXIT_CRITICAL();
+        if (overflow && err != NULL) *err = 1U;
+        if (count > 0U || overflow) return count;
+        if (timeout <= 0) break;
+        osDelay(1U);
+    } while ((uxr_millis() - start) < timeout);
+    return 0U;
 }
 
 size_t cubemx_transport_get_pending(void)
 {
     size_t head = it_head;
     size_t tail = it_tail;
-    if (tail >= head) {
-        return tail - head;
-    } else {
-        return USB_BUFFER_SIZE - head + tail;
-    }
+    return (tail + USB_BUFFER_SIZE - head) % USB_BUFFER_SIZE;
 }
-
 
 #endif
