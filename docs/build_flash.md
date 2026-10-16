@@ -70,6 +70,19 @@ openocd \
   -c "program build/microros_H7.elf verify reset exit"
 ```
 
+### Using a CMSIS-DAP Probe (e.g. Wireless DAPLink)
+
+`tools/flash_dap.sh` wraps OpenOCD for any CMSIS-DAP probe, including the wireless DAPLink (plug the master into the PC, wire the slave to SWDIO/SWCLK/GND/power). It uses `openocd` from `PATH`, or falls back to the copy bundled with STM32CubeIDE on Windows (run it from Git Bash).
+
+```bash
+./tools/flash_dap.sh                          # flash build/microros_H7.elf, verify, reset
+./tools/flash_dap.sh path/to/firmware.bin     # .bin is written to 0x08000000
+./tools/flash_dap.sh --server                 # GDB server on localhost:3333 for debugging
+```
+
+Reset is done over SWD (`SYSRESETREQ`), so the probe's RST pin does not need to be wired to NRST.
+The OpenOCD settings live in `tools/openocd_dap.cfg`; point Cortex-Debug's `configFiles` at it to debug from VS Code.
+
 ---
 
 ## 5. ⚠️ STM32CubeMX Regeneration Warning
