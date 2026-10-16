@@ -106,13 +106,13 @@
 /* ── Shared state ─────────────────────────────────────────────────── */
 volatile float g_cmd_velocity = 0.0f;  /* m/s   — last /cmd_vel, may be stale */
 volatile float g_cmd_yaw_rate = 0.0f;  /* rad/s — last /cmd_vel, may be stale */
-volatile uint8_t g_system_enabled = 1U;          /* state actually applied     */
+volatile uint8_t g_system_enabled = 0U;          /* state actually applied     */
 osMutexId_t motor_state_mutex = NULL;
 
 static MotorMitCmd_t s_mit_cmd[2];               /* last /cmd_mit, [0]=L [1]=R */
 
 static volatile uint32_t   s_cmd_last_tick  = 0U;  /* last command, either topic */
-static volatile uint8_t    s_enable_request = 1U;  /* written by the ROS callback */
+static volatile uint8_t    s_enable_request = 0U;  /* written by the ROS callback */
 static volatile uint8_t    s_cmd_timed_out  = 0U;
 static volatile CtrlMode_t s_mode_request   = CTRL_MODE_VELOCITY; /* last topic */
 static volatile CtrlMode_t s_mode_applied   = CTRL_MODE_VELOCITY; /* in the motor */
@@ -413,9 +413,9 @@ void Motor_task(void)
     printf("[MOTOR] FDCAN1 & FDCAN3 Filters Configured.\r\n");
     osDelay(50);
 
-    /* Enable tất cả motor lúc khởi động (Velocity mode cho tới khi /cmd_mit tới) */
-    motor_apply_enable(1U);
-    osDelay(100);  /* Chờ motor vào trạng thái Run */
+    /* Require an explicit ROS or RC arm request after boot. */
+    motor_apply_enable(0U);
+    osDelay(100);
 
     uint8_t rc_arm_prev = 1U;  /* tracks sbus_is_armed() to fire on change only */
 

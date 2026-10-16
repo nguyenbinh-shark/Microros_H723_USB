@@ -22,6 +22,8 @@ float BMI088_GYRO_SEN = BMI088_GYRO_2000_SEN;
 static uint8_t res = 0;
 static uint8_t write_reg_num = 0;
 static uint8_t error = BMI088_NO_ERROR;
+static uint8_t accel_chip_id;
+static uint8_t gyro_chip_id;
 float gyroDiff[3], gNormDiff;
 
 uint8_t caliOffset = 1;
@@ -33,6 +35,12 @@ static uint8_t bmi088_read_valid = 0U;
 uint8_t BMI088_ReadIsValid(void)
 {
     return bmi088_read_valid;
+}
+
+uint8_t BMI088_GetInitStatus(void) { return error; }
+uint8_t BMI088_GetChipId(uint8_t gyro)
+{
+    return gyro ? gyro_chip_id : accel_chip_id;
 }
 
 #if defined(BMI088_USE_SPI)
@@ -321,6 +329,7 @@ uint8_t bmi088_accel_init(void)
     BMI088_accel_read_single_reg(BMI088_ACC_CHIP_ID, res);
     HAL_Delay(1);
 
+    accel_chip_id = res;
     // check the "who am I"
     if (res != BMI088_ACC_CHIP_ID_VALUE)
         return BMI088_NO_SENSOR;
@@ -366,6 +375,7 @@ uint8_t bmi088_gyro_init(void)
     BMI088_gyro_read_single_reg(BMI088_GYRO_CHIP_ID, res);
     HAL_Delay(1);
 
+    gyro_chip_id = res;
     // check the "who am I"
     if (res != BMI088_GYRO_CHIP_ID_VALUE)
         return BMI088_NO_SENSOR;

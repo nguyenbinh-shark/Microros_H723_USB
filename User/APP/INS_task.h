@@ -94,6 +94,19 @@ typedef struct
  * Returns sample validity; callers must also check calibrated and sample age. */
 uint8_t INS_GetSnapshot(INS_Snapshot_t *out);
 
+typedef struct
+{
+    INS_Snapshot_t sample;
+    float accel[3];
+    float gyro[3];
+    float accel_scale;
+    float dt;
+    uint32_t calibration_count;
+    uint8_t read_valid;
+} INS_DebugState_t;
+
+void INS_GetDebugState(INS_DebugState_t *out);
+
 extern void INS_Init(void);
 extern void INS_task(void);
 

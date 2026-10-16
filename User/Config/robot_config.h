@@ -14,12 +14,12 @@
 /**
  * @brief Wheel radius in meters (bán kính bánh xe)
  */
-#define WHEEL_RADIUS      0.05f
+#define WHEEL_RADIUS      0.062455f
 
 /**
  * @brief Distance between left and right wheels in meters (khoảng cách 2 bánh)
  */
-#define WHEEL_BASE        0.30f
+#define WHEEL_BASE        0.345f
 
 /* ── Hardware configuration ─────────────────────────────────────────── */
 
@@ -74,11 +74,12 @@
 
 /**
  * @brief Gyro variance, (rad/s)^2.
- * BMI088 noise density 0.014 dps/sqrt(Hz) at the configured 230 Hz bandwidth
- * gives sigma ~0.004 rad/s per sample; 2.5e-5 (sigma 0.005) adds margin for
- * residual bias. Re-measure on the robot and replace if it differs.
+ * Stationary measurements on this board after startup calibration gave
+ * sigma 0.0105-0.0124 rad/s on the published samples. Use sigma ~0.0158
+ * with margin instead of the smaller datasheet-only estimate. Re-measure
+ * with the final mounting, temperature and motor vibration.
  */
-#define IMU_GYRO_VARIANCE          2.5e-5
+#define IMU_GYRO_VARIANCE          2.5e-4
 
 /**
  * @brief Accelerometer variance, (m/s^2)^2.

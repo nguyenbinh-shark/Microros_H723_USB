@@ -23,6 +23,7 @@ This document details the ROS 2 interface contract implemented by the `stm32h7_n
 | `/motor_fb` | Publisher | `sensor_msgs/msg/JointState` | **Best Effort** | **50 Hz** | Position, velocity, and torque feedback from wheels |
 | `/motor_status` | Publisher | `std_msgs/msg/UInt8` | **Reliable** | **5 Hz** | System health, CAN status, timeout and control-mode bitmask |
 | `/imu/data` | Publisher | `sensor_msgs/msg/Imu` | **Best Effort** | **50 Hz target** | Calibrated gyro, gravity-inclusive acceleration and relative orientation |
+| `/imu/debug` | Publisher | `std_msgs/msg/Float64MultiArray` | **Best Effort** | **5 Hz target** | IMU initialization, raw readings and calibration progress |
 
 ---
 
@@ -52,10 +53,10 @@ Each command topic maps to exactly one RobStride actuator `run_mode`:
   - `angular.z` (float64, interpreted as float32): Yaw rotational velocity in **$\text{rad/s}$**.
 - **Differential Kinematics:**
   $$\omega_L = \frac{v_x - \frac{W}{2}\omega_z}{R}, \quad \omega_R = \frac{v_x + \frac{W}{2}\omega_z}{R}$$
-  where $R = \text{WHEEL\_RADIUS} = 0.05\text{ m}$ and $W = \text{WHEEL\_BASE} = 0.30\text{ m}$. `MOTOR_LEFT_SIGN` / `MOTOR_RIGHT_SIGN` are applied, then the result is written to the motor's `SPD_REF` parameter.
-- **Saturation:** if either wheel would exceed $20\text{ rad/s}$ ($1\text{ m/s}$), **both** wheel speeds are scaled by the same factor so the faster one lands on the limit. The curvature $\omega_z / v_x$ is preserved and the robot stays on the planned path; it only moves slower than commanded. Keep $|v_x| + \frac{W}{2}|\omega_z| \le 1\text{ m/s}$ in the Nav2 limits to avoid scaling entirely.
+  where $R = \text{WHEEL\_RADIUS} = 0.062455\text{ m}$ and $W = \text{WHEEL\_BASE} = 0.345\text{ m}$, matching the current Pi bridge/URDF profile. `MOTOR_LEFT_SIGN` / `MOTOR_RIGHT_SIGN` are applied, then the result is written to the motor's `SPD_REF` parameter.
+- **Saturation:** if either wheel would exceed $20\text{ rad/s}$ ($1.2491\text{ m/s}$), **both** wheel speeds are scaled by the same factor so the faster one lands on the limit. The curvature $\omega_z / v_x$ is preserved and the robot stays on the planned path; it only moves slower than commanded. Keep $|v_x| + \frac{W}{2}|\omega_z| \le 1.2491\text{ m/s}$ in the Nav2 limits to avoid scaling entirely.
 - **Validation:** a message with NaN/Inf in `linear.x` or `angular.z` is dropped and logged on UART7.
-- **Acceleration:** ramped inside the motor at `VEL_MODE_ACC_RAD` = $20\text{ rad/s}^2$ ($1\text{ m/s}^2$ at the wheel).
+- **Acceleration:** ramped inside the motor at `VEL_MODE_ACC_RAD` = $20\text{ rad/s}^2$ ($1.2491\text{ m/s}^2$ at the wheel).
 
 ```bash
 ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3}, angular: {z: 0.0}}"
@@ -154,11 +155,11 @@ ros2 topic pub -r 100 /cmd_torque std_msgs/msg/Float64MultiArray "{data: [0.5, 0
 - **Angular velocity:** rad/s, corrected by configured driver offsets plus the residual gyro bias learned at startup.
 - **Linear acceleration:** m/s², **including gravity**. A stationary board with its sensor Z axis upward should report approximately `z=+9.81`; this is not `MotionAccel_b`.
 - **Timestamp:** synchronized agent epoch time adjusted for the sample's age, rather than the publication time. Duplicate samples, non-increasing IMU timestamps and samples older than 50 ms are skipped.
-- **Covariance:** diagonal, set in `robot_config.h` from BMI088 datasheet noise plus margin. They are starting values, not measurements on this robot. Re-measure (for example, log the stationary gyro for 60 s and take the variance) and update the macros if they differ.
+- **Covariance:** diagonal, set in `robot_config.h`. Gyro variance includes margin above stationary measurements on this board (standard deviation 0.0105–0.0124 rad/s over 30 s); the other values remain initial estimates. Re-measure with the final mounting, temperature and motors running, then update the macros if needed.
 
 | Field | Diagonal variance | Macro |
 |---|---|---|
-| `angular_velocity_covariance` | $2.5\times10^{-5}\ (\text{rad/s})^2$ ($\sigma \approx 0.005$ rad/s) | `IMU_GYRO_VARIANCE` |
+| `angular_velocity_covariance` | $2.5\times10^{-4}\ (\text{rad/s})^2$ ($\sigma \approx 0.0158$ rad/s) | `IMU_GYRO_VARIANCE` |
 | `linear_acceleration_covariance` | $1.0\times10^{-2}\ (\text{m/s}^2)^2$ ($\sigma \approx 0.1$ m/s², allows for vibration) | `IMU_ACCEL_VARIANCE` |
 | `orientation_covariance` roll, pitch | $1.0\times10^{-3}\ \text{rad}^2$ ($\sigma \approx 1.8°$) | `IMU_ORIENT_RP_VARIANCE` |
 | `orientation_covariance` yaw | $1.0\times10^{6}\ \text{rad}^2$ (effectively unknown) | `IMU_ORIENT_YAW_VARIANCE` |
@@ -167,6 +168,14 @@ ros2 topic pub -r 100 /cmd_torque std_msgs/msg/Float64MultiArray "{data: [0.5, 0
 - **Publication gate:** requires a valid, calibrated, fresh sample and synchronized time. Invalid SPI reads, non-finite data and invalid AHRS updates suppress IMU publication. After synchronization fails, timestamped sensor publication pauses while synchronization is retried every second.
 
 At startup, keep the board physically still for **at least 4 seconds**: 1 second warmup followed by 3 continuously stable seconds. Motion or excessive noise restarts the calibration window. LCD `CALIB` changes to `LOCKED` when calibration succeeds; UART7 reports `[INS] Stationary gyro calibration locked`. Bias is then frozen so subsequent slow rotation is not learned away. Extremely slow constant yaw during startup cannot be distinguished from bias by a six-axis IMU. Temperature changes can still cause later drift.
+
+Calibration evaluates gyro mean and gyro/accelerometer variance over the full
+window. The previous 0.01 rad/s limit on every raw gyro sample prevented startup
+on this board, whose stationary gyro noise was measured near 0.013 rad/s standard
+deviation. Current limits in `INS_task.c` allow 0.02 rad/s gyro standard deviation
+and 0.12 m/s² acceleration standard deviation; the gyro mean must remain below
+0.01 rad/s on every axis. Larger instantaneous motion and outliers still reset
+the window. Keep these thresholds consistent with measurements on the actual board.
 
 Check only sensor data while commissioning:
 
@@ -177,6 +186,26 @@ ros2 topic hz /imu/data --qos-reliability best_effort
 ```
 
 Check that timestamps advance, quaternion norm is near 1, the stationary gyro is near zero, and rotation about each physical sensor axis has the expected sign. In WSL, reduced rates may also reflect USB forwarding and the host subscriber; a 50 Hz timer is not a measured hardware throughput guarantee.
+
+### 3.7 `/imu/debug`
+
+This topic continues while calibrated IMU publication is suppressed. Its values
+are diagnostic telemetry, not an estimator input. The fixed array indices are:
+
+| Indices | Contents |
+|---|---|
+| 0 | BMI088 initialization status; zero means success |
+| 1–3 | Driver read valid, INS sample valid, calibration complete |
+| 4–6 | Calibration sample count, INS sequence, sample age in milliseconds |
+| 7–9 | Driver acceleration X/Y/Z, m/s² including gravity |
+| 10–12 | Driver gyro X/Y/Z, rad/s before the learned residual bias correction |
+| 13–15 | Accelerometer scale, configured gravity norm, INS timestep in seconds |
+| 16–19 | SPI HAL error, ROS time synchronized, SYSCFG PMCR, SPI2 SR |
+| 20–21 | Accelerometer and gyroscope IDs observed during initialization; expected 30 and 15 |
+
+```bash
+ros2 topic echo /imu/debug --qos-reliability best_effort
+```
 
 ---
 

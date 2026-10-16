@@ -83,7 +83,7 @@ void BMI088_Read(IMU_Data_t *data) {
     if (mode == 4 && tick == 5500) read_valid = 0;
     if (mode == 5 && tick == 5500) data->Gyro[0] = NAN;
     if (mode == 6 && tick == 5500) memset(data->Accel, 0, sizeof(data->Accel));
-    if (mode == 7) data->Gyro[2] += (tick & 1) ? 0.003f : -0.003f;
+    if (mode == 7) data->Gyro[2] += (tick & 1) ? 0.03f : -0.03f;
     if (mode == 9 && tick == 5500) mahony.q0 = NAN;
     if (mode == 10) {
         float a = (tick & 1) ? 0.2f : -0.2f;
@@ -96,6 +96,16 @@ void BMI088_Read(IMU_Data_t *data) {
         data->Accel[1] = 9.81f * sinf(roll) * cosf(pitch);
         data->Accel[2] = 9.81f * cosf(roll) * cosf(pitch);
     }
+    if (mode == 12) {
+        /* Stationary board noise measured on the real BMI088: samples cross
+         * 0.01 rad/s frequently while their mean remains the static bias. */
+        for (int i = 0; i < 3; ++i) {
+            float noise = ((float)((tick * (37U + 4U*i)) % 101U) - 50.0f) / 50.0f;
+            data->Gyro[i] += 0.02f * noise;
+            data->Accel[i] += 0.08f * noise;
+        }
+    }
+    if (mode == 13) data->Gyro[2] = 0.02f; /* Steady rotation must not become bias. */
 }
 static INS_Snapshot_t run(int test_mode, uint32_t until) {
     mode = test_mode; tick = 0; stop_tick = until; first_lock = 0;
@@ -147,6 +157,13 @@ int main(void) {
     assert(fabsf(INS.MotionAccel_b[0]) < 0.0001f);
     assert(fabsf(INS.MotionAccel_b[1]) < 0.0001f);
     assert(fabsf(INS.MotionAccel_b[2]) < 0.0001f);
+
+    s = run(12, 6000);
+    assert(s.valid && s.calibrated && first_lock == 4000); normalized(&s);
+    assert(fabsf(s.gyro_bias[0] - 0.001f) < 0.0001f);
+    assert(fabsf(s.gyro_bias[1] - 0.002f) < 0.0001f);
+    assert(fabsf(s.gyro_bias[2] + 0.003f) < 0.0001f);
+    s = run(13, 12000); assert(!s.calibrated && first_lock == 0);
 
     struct MAHONY_FILTER_t m;
     memset(&m, 0xFF, sizeof(m));

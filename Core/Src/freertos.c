@@ -50,6 +50,7 @@
 #include "BMI088driver.h"
 #include "bsp_dwt.h"
 #include "lcd_task.h"
+#include "spi.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -93,6 +94,7 @@ extern size_t cubemx_transport_get_pending(void);
 static rcl_publisher_t    pub_motor_fb;
 static rcl_publisher_t    pub_motor_status;
 static rcl_publisher_t    pub_imu;
+static rcl_publisher_t    pub_imu_debug;
 static rcl_subscription_t sub_cmd_vel;
 static rcl_subscription_t sub_motor_enable;
 static rcl_subscription_t sub_cmd_mit;
@@ -105,6 +107,8 @@ static rclc_executor_t    executor;
 static sensor_msgs__msg__JointState motor_fb_msg;
 static std_msgs__msg__UInt8         motor_status_msg;
 static sensor_msgs__msg__Imu        imu_msg;
+static std_msgs__msg__Float64MultiArray imu_debug_msg;
+static double imu_debug_data[22];
 static geometry_msgs__msg__Twist    cmd_vel_msg;
 static std_msgs__msg__Bool          motor_enable_msg;
 static std_msgs__msg__Float64MultiArray cmd_mit_msg;
@@ -142,7 +146,8 @@ enum {
   ENT_SUPPORT = 1U << 0, ENT_NODE = 1U << 1,
   ENT_MOTOR_FB = 1U << 2, ENT_MOTOR_STATUS = 1U << 3, ENT_IMU = 1U << 4,
   ENT_CMD_VEL = 1U << 5, ENT_MOTOR_ENABLE = 1U << 6, ENT_CMD_MIT = 1U << 7,
-  ENT_EXECUTOR = 1U << 8, ENT_CMD_TORQUE = 1U << 9
+  ENT_EXECUTOR = 1U << 8, ENT_CMD_TORQUE = 1U << 9,
+  ENT_IMU_DEBUG = 1U << 10
 };
 static uint32_t g_entities;
 static bool g_time_synced;
@@ -422,6 +427,35 @@ void StartDefaultTask(void *argument)
             motor_status_msg.data = st;
             rcl_ret_t st_ret = rcl_publish(&pub_motor_status, &motor_status_msg, NULL);
             if (st_ret != RCL_RET_OK) rcl_reset_error();
+
+            /* Diagnostic telemetry remains available when valid IMU output is
+             * deliberately suppressed. It is never an estimator input. */
+            INS_DebugState_t dbg;
+            INS_GetDebugState(&dbg);
+            imu_debug_data[0] = BMI088_GetInitStatus();
+            imu_debug_data[1] = dbg.read_valid;
+            imu_debug_data[2] = dbg.sample.valid;
+            imu_debug_data[3] = dbg.sample.calibrated;
+            imu_debug_data[4] = dbg.calibration_count;
+            imu_debug_data[5] = dbg.sample.sequence;
+            /* INS can preempt us after `now` was captured; use a fresh tick
+             * after copying the sample to avoid unsigned age underflow. */
+            imu_debug_data[6] = (uint32_t)(HAL_GetTick() - dbg.sample.sample_tick_ms);
+            for (uint8_t i = 0; i < 3; ++i) {
+              imu_debug_data[7 + i] = dbg.accel[i];
+              imu_debug_data[10 + i] = dbg.gyro[i];
+            }
+            imu_debug_data[13] = dbg.accel_scale;
+            imu_debug_data[14] = BMI088.gNorm;
+            imu_debug_data[15] = dbg.dt;
+            imu_debug_data[16] = hspi2.ErrorCode;
+            imu_debug_data[17] = g_time_synced;
+            imu_debug_data[18] = SYSCFG->PMCR;
+            imu_debug_data[19] = SPI2->SR;
+            imu_debug_data[20] = BMI088_GetChipId(0);
+            imu_debug_data[21] = BMI088_GetChipId(1);
+            rcl_ret_t dbg_ret = rcl_publish(&pub_imu_debug, &imu_debug_msg, NULL);
+            if (dbg_ret != RCL_RET_OK) rcl_reset_error();
           }
         }
 
@@ -504,6 +538,7 @@ static bool create_entities(void)
   pub_motor_fb = rcl_get_zero_initialized_publisher();
   pub_motor_status = rcl_get_zero_initialized_publisher();
   pub_imu = rcl_get_zero_initialized_publisher();
+  pub_imu_debug = rcl_get_zero_initialized_publisher();
   sub_cmd_vel = rcl_get_zero_initialized_subscription();
   sub_motor_enable = rcl_get_zero_initialized_subscription();
   sub_cmd_mit = rcl_get_zero_initialized_subscription();
@@ -551,6 +586,16 @@ static bool create_entities(void)
     ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "imu/data");
   if (rc != RCL_RET_OK) goto fail;
   g_entities |= ENT_IMU;
+
+  stage = "publisher /imu/debug";
+  rc = rclc_publisher_init_best_effort(&pub_imu_debug, &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float64MultiArray), "imu/debug");
+  if (rc != RCL_RET_OK) goto fail;
+  g_entities |= ENT_IMU_DEBUG;
+  memset(&imu_debug_msg, 0, sizeof(imu_debug_msg));
+  imu_debug_msg.data.data = imu_debug_data;
+  imu_debug_msg.data.size = 22;
+  imu_debug_msg.data.capacity = 22;
 
   stage = "subscription /cmd_vel";
   rc = rclc_subscription_init_best_effort(&sub_cmd_vel, &node,
@@ -706,6 +751,7 @@ static void destroy_entities(void)
   if (g_entities & ENT_CMD_MIT) rc = rcl_subscription_fini(&sub_cmd_mit, &node);
   if (g_entities & ENT_MOTOR_ENABLE) rc = rcl_subscription_fini(&sub_motor_enable, &node);
   if (g_entities & ENT_CMD_VEL) rc = rcl_subscription_fini(&sub_cmd_vel, &node);
+  if (g_entities & ENT_IMU_DEBUG) rc = rcl_publisher_fini(&pub_imu_debug, &node);
   if (g_entities & ENT_IMU) rc = rcl_publisher_fini(&pub_imu, &node);
   if (g_entities & ENT_MOTOR_STATUS) rc = rcl_publisher_fini(&pub_motor_status, &node);
   if (g_entities & ENT_MOTOR_FB) rc = rcl_publisher_fini(&pub_motor_fb, &node);

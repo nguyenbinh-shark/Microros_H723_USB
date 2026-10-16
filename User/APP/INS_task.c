@@ -37,10 +37,17 @@ float gravity[3] = {0, 0, 9.81f};
 #define INS_WARMUP_MS          1000U
 #define INS_CALIBRATION_MS     3000U
 #define INS_CALIBRATION_MIN_SAMPLES 2000U
-#define INS_STILL_GYRO_MAX     0.01f   /* rad/s, after configured driver offsets */
-#define INS_STILL_GYRO_SPAN    0.01f   /* rad/s over the entire window */
-#define INS_STILL_GYRO_STD     0.0025f /* rad/s */
-#define INS_STILL_ACCEL_SPAN   0.25f   /* m/s^2 per axis */
+/* Raw high-bandwidth BMI088 samples on this board have ~0.013 rad/s gyro
+ * standard deviation even while stationary. A 0.01 rad/s per-sample limit
+ * reset calibration continuously. Reject gross motion immediately, then use
+ * mean and variance over the complete stationary window to separate noise
+ * from motion. Bias is still frozen after the first successful calibration. */
+#define INS_CAL_GYRO_HARD_MAX  0.15f   /* rad/s, immediate motion rejection */
+#define INS_STILL_GYRO_MEAN_MAX 0.01f  /* rad/s, averaged over 3 seconds */
+#define INS_STILL_GYRO_SPAN    0.20f   /* rad/s, coarse outlier guard */
+#define INS_STILL_GYRO_STD     0.02f   /* rad/s, window noise limit */
+#define INS_STILL_ACCEL_SPAN   0.80f   /* m/s^2 per axis, coarse outlier guard */
+#define INS_STILL_ACCEL_STD    0.12f   /* m/s^2, rejects changing gravity direction */
 #define INS_STILL_GRAVITY_ERR  0.4f    /* m/s^2 */
 
 typedef struct
@@ -49,6 +56,8 @@ typedef struct
     uint32_t first_tick_ms;
     float mean[3];
     float m2[3];
+    float accel_mean[3];
+    float accel_m2[3];
     float gyro_min[3], gyro_max[3];
     float accel_min[3], accel_max[3];
 } INS_Calibration_t;
@@ -75,6 +84,20 @@ uint8_t INS_GetSnapshot(INS_Snapshot_t *out)
     *out = snapshot;
     taskEXIT_CRITICAL();
     return out->valid;
+}
+
+void INS_GetDebugState(INS_DebugState_t *out)
+{
+    if (out == NULL) return;
+    taskENTER_CRITICAL();
+    out->sample = snapshot;
+    memcpy(out->accel, BMI088.Accel, sizeof(out->accel));
+    memcpy(out->gyro, BMI088.Gyro, sizeof(out->gyro));
+    out->accel_scale = BMI088.AccelScale;
+    out->dt = ins_dt;
+    out->calibration_count = calibration.count;
+    out->read_valid = BMI088_ReadIsValid();
+    taskEXIT_CRITICAL();
 }
 
 static void INS_StoreSnapshot(uint32_t sample_tick_ms, uint8_t valid)
@@ -129,7 +152,7 @@ static void INS_UpdateCalibration(uint32_t now_ms)
         return;
     }
     for (uint8_t i = 0; i < 3; ++i) {
-        if (fabsf(BMI088.Gyro[i]) > INS_STILL_GYRO_MAX) {
+        if (fabsf(BMI088.Gyro[i]) > INS_CAL_GYRO_HARD_MAX) {
             INS_ResetCalibrationWindow();
             return;
         }
@@ -148,6 +171,9 @@ static void INS_UpdateCalibration(uint32_t now_ms)
         float delta = g - calibration.mean[i];
         calibration.mean[i] += delta / (float)calibration.count;
         calibration.m2[i] += delta * (g - calibration.mean[i]);
+        float accel_delta = a - calibration.accel_mean[i];
+        calibration.accel_mean[i] += accel_delta / (float)calibration.count;
+        calibration.accel_m2[i] += accel_delta * (a - calibration.accel_mean[i]);
         if (g < calibration.gyro_min[i]) calibration.gyro_min[i] = g;
         if (g > calibration.gyro_max[i]) calibration.gyro_max[i] = g;
         if (a < calibration.accel_min[i]) calibration.accel_min[i] = a;
@@ -163,7 +189,10 @@ static void INS_UpdateCalibration(uint32_t now_ms)
         calibration.count < INS_CALIBRATION_MIN_SAMPLES) return;
     for (uint8_t i = 0; i < 3; ++i) {
         float variance = calibration.m2[i] / (float)(calibration.count - 1U);
-        if (variance > INS_STILL_GYRO_STD * INS_STILL_GYRO_STD) {
+        float accel_variance = calibration.accel_m2[i] / (float)(calibration.count - 1U);
+        if (fabsf(calibration.mean[i]) > INS_STILL_GYRO_MEAN_MAX ||
+            variance > INS_STILL_GYRO_STD * INS_STILL_GYRO_STD ||
+            accel_variance > INS_STILL_ACCEL_STD * INS_STILL_ACCEL_STD) {
             INS_ResetCalibrationWindow();
             return;
         }

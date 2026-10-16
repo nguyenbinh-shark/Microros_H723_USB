@@ -106,5 +106,7 @@ extern void BMI088_Read(IMU_Data_t *bmi088);
  * SPI/chip-ID/calibration/finite-value checks. Failed reads leave old vectors
  * untouched; consumers must check this flag before using them as a new sample. */
 extern uint8_t BMI088_ReadIsValid(void);
+uint8_t BMI088_GetInitStatus(void);
+uint8_t BMI088_GetChipId(uint8_t gyro);
 
 #endif
