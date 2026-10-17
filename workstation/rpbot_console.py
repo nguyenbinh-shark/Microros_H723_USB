@@ -20,11 +20,13 @@ import base64
 import hashlib
 from console_layout import build as build_layout
 from stream_client import TelemetryStream
+from connection_state import ConnectionState
+from network_probe import ping_ipv4, resolve_ipv4
 from map_library import map_name as validate_map_name
 
 HERE = Path(__file__).resolve().parent
 STATE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "RPBotConsole"
-DEFAULTS = {"host": "192.168.0.120", "user": "sharkagv",
+DEFAULTS = {"host": "", "user": "",
             "distro": "Ubuntu-24.04", "wsl_user": "shark"}
 HIDDEN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
@@ -36,12 +38,18 @@ def wsl_path(path):
     return "/mnt/" + path[0].lower() + path[2:]
 
 
+def validate_host(host):
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", host):
+        raise ValueError('Nhập tên thiết bị hoặc IPv4 hợp lệ, ví dụ robot.local hoặc 192.168.1.50.')
+    return host
+
+
 def validate_settings(settings):
+    validate_host(settings['host'])
     for key in ("user", "wsl_user"):
         if not re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", settings[key]):
-            raise ValueError(f"Invalid {key}")
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]{0,252}", settings["host"]):
-        raise ValueError("Enter a hostname or IPv4 address")
+            label = 'SSH' if key == 'user' else 'WSL'
+            raise ValueError(f'Nhập tài khoản {label} hợp lệ.')
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", settings["distro"]):
         raise ValueError("Invalid WSL distro name")
     return settings
@@ -53,6 +61,7 @@ def wsl_command(settings, *args):
 
 def capture(command, *, input=None, timeout=45):
     result = subprocess.run(command, input=input, capture_output=True, text=True,
+                            stdin=subprocess.DEVNULL if input is None else None,
                             encoding="utf-8", errors="replace", timeout=timeout,
                             creationflags=HIDDEN)
     if result.returncode:
@@ -61,22 +70,38 @@ def capture(command, *, input=None, timeout=45):
     return result.stdout.strip()
 
 
-def remote(settings, action, *args):
+def remote(settings, action, *args, address=None):
     # Only known actions; arguments are POSIX quoted before SSH passes them to a shell.
     command = shlex.join(["python3", "-", action, *args])
+    host_options = []
+    if settings['host'].lower().endswith('.local'):
+        # Windows can resolve mDNS even when WSL's resolver cannot. Keep the
+        # original hostname for SSH config matching and host-key verification.
+        host_options = ['-o', 'HostName=' + (address or resolve_robot_address(settings)),
+                        '-o', 'HostKeyAlias=' + settings['host'].lower()]
     return capture(wsl_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
                                "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
                                "-o", "ServerAliveCountMax=2",
-                               settings["user"] + "@" + settings["host"], command),
+                               *host_options, settings["user"] + "@" + settings["host"], command),
                    input=(HERE / "map_library.py").read_text(encoding="utf-8") + "\n" +
+                         (HERE / "robot_tasks.py").read_text(encoding="utf-8") + "\n" +
                          (HERE / "remote_ops.py").read_text(encoding="utf-8"))
 
 
-def session_args(settings, action, session):
+def resolve_robot_address(settings):
+    return resolve_ipv4(settings['host'], fallback=lambda host: capture(
+        wsl_command(settings, 'getent', 'ahostsv4', host), timeout=5))
+
+
+def ping_robot(settings):
+    return ping_ipv4(resolve_robot_address(settings))
+
+
+def session_args(settings, action, session, *, address=None):
     command = wsl_command(settings, "bash", wsl_path(HERE / "ros_session.sh"),
                           action, "--domain", str(session["domain"]))
     profile = STATE / "fastdds.xml"
-    xml = pc_profile(session.get("profile_xml", ""), settings["host"], session["domain"])
+    xml = pc_profile(session.get("profile_xml", ""), address or resolve_robot_address(settings), session["domain"])
     # A second Console/diagnostic process must never observe a half-written XML.
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=STATE, delete=False) as file:
         file.write(xml)
@@ -124,24 +149,28 @@ def pc_profile(xml, host, domain):
 
 
 def inspect_robot(settings):
-    robot = json.loads(remote(settings, "status"))
+    # Resolve .local in the metadata worker. Tk later reuses this address when
+    # opening/recovering DDS, instead of doing mDNS/WSL lookups on its event loop.
+    address = resolve_robot_address(settings) if settings['host'].lower().endswith('.local') else None
+    robot = json.loads(remote(settings, "status", address=address))
     sessions = [item for item in robot["launches"]
                 if item["mode"] in ("mapping", "navigation") and not item["simulated_time"]]
     if len(sessions) != 1:
-        note = "Robot chưa chạy Mapping hoặc Navigation. Bấm Bắt đầu mapping nếu muốn tạo bản đồ."
+        note = "Robot chưa chạy Mapping hoặc Navigation. Bấm Bắt đầu mapping để tạo map, hoặc chọn map đã lưu rồi Bắt đầu Nav."
         if sessions:
             note = "Có nhiều phiên robot: " + "; ".join(
                 f"{item['mode']} (PID {item['pid']}, domain {item['domain']})" for item in sessions)
         return {"robot": robot, "session": None, "data": None,
-                "note": note}
+                "note": note, "address": address}
     session = sessions[0]
-    return {"robot": robot, "session": session, "data": None}
+    return {"robot": robot, "session": session, "data": None, "address": address}
 
 
 def check_connection(settings):
     report = inspect_robot(settings)
     if report["session"]:
-        report["data"] = json.loads(capture(session_args(settings, "probe", report["session"]), timeout=25))
+        report["data"] = json.loads(capture(session_args(settings, "probe", report["session"],
+                                                       address=report.get('address')), timeout=25))
     return report
 
 
@@ -185,13 +214,20 @@ class Console:
         self.busy = False
         self.session = None
         self.connected_settings = None
+        self.robot_address = None
         self.last_data = None
         self.last_check = 0.0
-        self.last_attempt = 0.0
         self.viewers = {}
         self.actions = []
+        self.stop_buttons = []
+        self.stop_busy = False
+        self.task_records = {}
         self.connecting = False
+        self.pinging = False
         self.last_meta = 0.0
+        self.connection = ConnectionState()
+        self.requested_settings = None
+        self.pending_session = None
         self.stream = None
         self.stream_key = None
         self.stream_seen = 0
@@ -201,9 +237,12 @@ class Console:
         self.closed = False
         root.report_callback_exception = lambda kind, error, trace: self.append("Lỗi thao tác: " + str(error))
         build_layout(self)
+        if not self.settings['host'] or not self.settings['user']:
+            self.tabs.select(self.tab_frames['settings'])
+            self.activity.set('Nhập thiết bị và tài khoản SSH trong Kết nối')
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(150, self.drain)
-        root.after(600, self.check)
+        root.after(600, lambda: self.check(quiet=True) if self.requested_settings is None else None)
         root.after(100, self.tick)
 
     @staticmethod
@@ -215,22 +254,48 @@ class Console:
         self.actions.append(button)
         return button
 
+    def stop_button(self, parent, text, action):
+        button = ttk.Button(parent, text=text, command=action)
+        self.stop_buttons.append(button)
+        return button
+
+    def current_settings(self):
+        return validate_settings({key: var.get().strip() for key, var in self.fields.items()})
+
+    def current_ping_settings(self):
+        # ICMP needs a host, not an SSH login. Allow checking a new device before
+        # its account is filled in; compare the same snapshot on completion.
+        settings = {key: var.get().strip() for key, var in self.fields.items()}
+        validate_host(settings['host'])
+        return settings
+
     def config(self):
-        settings = validate_settings({key: var.get().strip() for key, var in self.fields.items()})
-        (STATE / "settings.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
+        settings = self.current_settings()
+        if settings != self.settings:
+            (STATE / "settings.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            self.settings = dict(settings)
         return settings
 
     def append(self, text):
         line = f"[{datetime.now():%H:%M:%S}] {text}\n"
+        message = text.strip().casefold()
+        if message.startswith(('lỗi', 'chưa dừng hết')):
+            tag = 'error'
+        elif message.startswith(('chưa kết nối', 'mất ', 'chưa xác nhận', 'đang tự phục hồi')):
+            tag = 'warning'
+        elif message.startswith(('đã kết nối', 'đã phục hồi', 'đã lưu', 'đã dừng ')):
+            tag = 'success'
+        else:
+            tag = ''
         self.log.configure(state="normal")
-        self.log.insert("end", line)
+        self.log.insert("end", line, (tag,) if tag else ())
         self.log.see("end")
         self.log.configure(state="disabled")
         with (STATE / "console.log").open("a", encoding="utf-8") as file:
             file.write(line)
 
     def task(self, title, work, done=None):
-        if self.busy:
+        if self.busy or self.stop_busy:
             return
         self.busy = True
         for button in self.actions:
@@ -246,19 +311,74 @@ class Console:
                 self.events.put(("task", False, str(exc), done))
         threading.Thread(target=worker, daemon=True).start()
 
+    def control_task(self, title, work, done=None):
+        if self.stop_busy:
+            return
+        self.stop_busy = True
+        for button in self.actions + self.stop_buttons:
+            button.state(["disabled"])
+        self.activity.set(title)
+        self.append(title)
+        def worker():
+            try:
+                self.events.put(("stop", True, work(), done))
+            except Exception as exc:
+                self.events.put(("stop", False, str(exc), done))
+        threading.Thread(target=worker, daemon=True).start()
+
     def drain(self):
         try:
             while True:
                 kind, ok, result, done = self.events.get_nowait()
                 if kind == "task":
                     self.busy = False
-                    for button in self.actions:
+                    if not self.stop_busy:
+                        for button in self.actions:
+                            button.state(["!disabled"])
+                        self.activity.set("Sẵn sàng" if ok else "Thao tác chưa hoàn tất")
+                elif kind == "stop":
+                    self.stop_busy = False
+                    for button in self.stop_buttons + ([] if self.busy else self.actions):
                         button.state(["!disabled"])
-                    self.activity.set("Sẵn sàng" if ok else "Thao tác chưa hoàn tất")
+                    self.activity.set("Đã kiểm tra tác vụ" if ok else "Chưa xác nhận dừng tác vụ")
                 elif kind == "metadata":
                     self.connecting = False
-                    if not self.busy:
-                        self.activity.set("Đã kiểm tra kết nối" if ok else "Đang chờ kết nối lại")
+                    settings, payload = result
+                    try:
+                        current = self.current_settings()
+                    except ValueError:
+                        current = None
+                    if settings != current:
+                        # A slow reply from the previous address must not replace the new robot.
+                        self.connection.next_check = 0
+                        if self.pending_session and self.pending_session[0] != current:
+                            self.cancel_pending("Kết nối đã đổi; thao tác chưa được thực hiện.")
+                        continue
+                    if ok:
+                        self.checked(result)
+                    else:
+                        self.metadata_failed(payload)
+                    continue
+                elif kind == "ping":
+                    self.pinging = False
+                    self.ping_button.state(['!disabled'])
+                    settings, payload = result
+                    try:
+                        current = self.current_ping_settings()
+                    except ValueError:
+                        current = None
+                    if settings != current:
+                        self.set_ping_status('Cấu hình đã đổi. Bấm Ping thiết bị để kiểm tra địa chỉ mới.', 'unknown')
+                        continue
+                    if ok:
+                        self.set_ping_status(payload.summary, payload.level)
+                        self.append(f"Ping {settings['host']}: {payload.summary}")
+                        if payload.output:
+                            self.append(payload.output)
+                    else:
+                        self.set_ping_status(str(payload), 'error')
+                        self.append(f"Lỗi ping {settings['host']}: {payload}")
+                    continue
                 if ok:
                     if done:
                         done(result)
@@ -268,43 +388,94 @@ class Console:
                     self.append("Lỗi: " + result)
                     if kind == "preview" and done:
                         done(result)
-                    # Never retain a green readiness indicator after a failed check.
-                    if done == self.checked:
-                        self.last_meta = 0
-                        self.status["connection"].set("SSH chưa kết nối — dữ liệu ROS được kiểm tra riêng")
-                    elif self.session is None:
-                        self.status["mapping"].set("Chưa xác nhận kết quả thao tác — bấm Kiểm tra để cập nhật")
+                    if self.session is None:
+                        self.status["mapping"].set("Chưa xác nhận kết quả thao tác — đang tự cập nhật")
+                        self.connection.next_check = 0
         except queue.Empty:
             pass
         if not self.closed:
             self.root.after(150, self.drain)
 
-    def check(self):
+    def check(self, *, quiet=False):
         if self.connecting:
             return
         try:
             settings = self.config()
         except ValueError as exc:
-            messagebox.showerror("Cấu hình kết nối", str(exc))
+            if not quiet:
+                messagebox.showerror("Cấu hình kết nối", str(exc))
             return
-        self.last_attempt = time.monotonic()
         self.connecting = True
-        if not self.busy:
+        self.requested_settings = dict(settings)
+        if not quiet and not self.busy and not self.stop_busy:
             self.activity.set("Đang kiểm tra kết nối…")
         def worker():
             try:
                 self.events.put(("metadata", True, (settings, inspect_robot(settings)), self.checked))
             except Exception as exc:
-                self.events.put(("metadata", False, str(exc), self.checked))
+                self.events.put(("metadata", False, (settings, str(exc)), None))
         threading.Thread(target=worker, daemon=True).start()
+
+    def set_ping_status(self, text, level):
+        from status_dashboard import COLORS
+        background, foreground, _ = COLORS[level]
+        self.ping_status.set(text)
+        self.ping_label.configure(background=background, foreground=foreground)
+
+    def invalidate_ping(self, *_):
+        self.set_ping_status('Cấu hình đã đổi. Bấm Ping thiết bị để kiểm tra địa chỉ mới.', 'unknown')
+
+    def ping_device(self):
+        if self.pinging:
+            return
+        try:
+            settings = self.current_ping_settings()
+        except ValueError as exc:
+            self.set_ping_status(str(exc), 'error')
+            return
+        self.pinging = True
+        self.ping_button.state(['disabled'])
+        self.set_ping_status(f"Đang tìm và ping {settings['host']}…", 'info')
+        def worker():
+            try:
+                self.events.put(('ping', True, (settings, ping_robot(settings)), None))
+            except Exception as exc:
+                self.events.put(('ping', False, (settings, str(exc)), None))
+        threading.Thread(target=worker, daemon=True).start()
+
+    def telemetry_fresh(self):
+        if not self.stream or not self.stream.alive():
+            return False
+        _, updated, frames = self.stream.snapshot()
+        return bool(frames and updated and time.monotonic() - updated < 2)
+
+    def metadata_failed(self, error):
+        if self.connection.metadata_failed(time.monotonic(), error):
+            self.append("Chưa kết nối được SSH; Console sẽ tự thử lại. Chi tiết: " + error)
+        self.cancel_pending("Chưa xác nhận được kết nối; thao tác chưa thực hiện. Khi mạng trở lại, bấm lại nút thao tác.")
+        if not self.telemetry_fresh():
+            self.status['connection'].set('Chưa kết nối được Pi — đang tự kết nối lại')
+            if not self.busy and not self.stop_busy:
+                self.activity.set('Đang chờ robot / mạng trở lại')
+        elif not self.busy and not self.stop_busy:
+            self.activity.set('Đang nhận ROS · SSH đang tự nối lại')
 
     def checked(self, result):
         settings, report = result
         robot, data = report["robot"], report["data"]
+        previous = self.session_identity(self.session)
         self.connected_settings = settings
+        self.robot_address = report.get('address')
         self.session = report["session"]
         self.last_meta = time.monotonic()
-        self.status["connection"].set(f"SSH: {robot['hostname']} ({settings['host']})")
+        recovered = self.connection.metadata_ok(self.last_meta, has_session=self.session is not None)
+        if recovered:
+            self.append('Đã kết nối lại SSH tới robot.')
+        fresh = self.session is not None and previous == self.session_identity(self.session) and self.telemetry_fresh()
+        if not fresh:
+            self.status["connection"].set(f"SSH: {robot['hostname']} ({settings['host']})")
+        if not self.busy and not self.stop_busy and (not fresh or recovered):
+            self.activity.set('Đã kết nối robot' if self.session else 'Đã kết nối Pi · chưa có phiên robot')
         service = robot["service"]
         if service.get("UnitFileState") == "enabled":
             self.status["boot"].set("Đã bật · dịch vụ đang chạy" if service.get("ActiveState") == "active"
@@ -320,25 +491,79 @@ class Console:
             self.status["sensors"].set("Chưa kiểm tra")
             self.status["motion"].set("Chưa kiểm tra")
             self.status["navigation"].set("Chưa kiểm tra")
+            self.resume_pending()
             return
         key = (tuple(sorted(settings.items())), self.session["pid"], self.session["domain"], self.session.get("profile_xml"))
-        if self.stream_key != key or not self.stream or not self.stream.alive():
-            self.stop_stream()
+        if self.robot_address:
+            key += (self.robot_address,)
+        changed = self.stream_key != key
+        if changed:
+            self.connection.reset_stream()
             self.last_data = None
             self.last_check = 0
             for name in ("mapping", "sensors", "motion", "navigation"):
                 self.status[name].set("Đang chờ dữ liệu ROS mới…")
             self.topic_tree.delete(*self.topic_tree.get_children())
-            self.stream = TelemetryStream(session_args(settings, "stream", self.session),
-                                           STATE / "telemetry.log", creationflags=HIDDEN)
-            self.stream_key, self.stream_seen = key, 0
+            self.task_domain.set(self.session['domain'])
+        _, updated, _ = self.stream.snapshot() if self.stream else (None, 0, 0)
+        alive = bool(self.stream and self.stream.alive())
+        if changed or self.connection.restart_due(time.monotonic(), alive=alive, updated=updated):
+            self.start_stream(settings, key)
+        if changed:
             self.append("Đã kết nối phiên " + self.session.get("mode", "mapping").capitalize() + " — đang nhận trạng thái ROS liên tục.")
         if data:
             self.render_data(data)
         report["data"] = self.last_data
         (STATE / "last-diagnostics.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if getattr(self, "map_settings", None) != settings and not self.busy:
-            self.root.after(100, self.refresh_maps)
+            self.root.after(100, lambda: self.refresh_maps(background=True))
+        self.resume_pending()
+
+    def start_stream(self, settings, key):
+        self.stop_stream()
+        self.stream_key, self.stream_seen = key, 0
+        self.connection.stream_attempt(time.monotonic())
+        try:
+            self.stream = TelemetryStream(session_args(settings, "stream", self.session,
+                                                       address=self.robot_address),
+                                          STATE / "telemetry.log", creationflags=HIDDEN)
+        except Exception as exc:
+            if not self.connection.stream_recovering:
+                self.append('Chưa mở được luồng ROS; Console sẽ tự thử lại: ' + str(exc))
+            self.connection.stream_recovering = True
+
+    @staticmethod
+    def session_identity(session):
+        return (session['pid'], session['domain'], session['mode']) if session else None
+
+    def cancel_pending(self, reason):
+        if self.pending_session is not None:
+            self.pending_session = None
+            self.append(reason)
+
+    def resume_pending(self):
+        pending, self.pending_session = self.pending_session, None
+        if pending is None:
+            return
+        settings, expected, deadline, callback = pending
+        if settings != self.connected_settings:
+            self.append('Kết nối đã đổi; thao tác chưa được thực hiện.')
+            return
+        if time.monotonic() > deadline or self.busy or self.stop_busy:
+            self.append('Thao tác chưa thực hiện. Bạn có thể bấm lại nút thao tác khi sẵn sàng.')
+            return
+        if not self.session:
+            messagebox.showinfo('Phiên robot', 'Pi đã kết nối nhưng chưa có đúng một phiên Mapping/Navigation. Xem trạng thái hoặc bắt đầu phiên cần dùng.')
+            return
+        if expected is not None and expected != self.session_identity(self.session):
+            self.append('Phiên robot đã đổi; thao tác chưa thực hiện. Kiểm tra phiên hiện tại rồi bấm lại nút thao tác.')
+            return
+        confirmed = self.session_identity(self.session)
+        def resume():
+            if (not self.closed and time.monotonic() <= deadline and not self.busy and not self.stop_busy
+                    and settings == self.current_settings() and confirmed == self.session_identity(self.session)):
+                callback()
+        self.root.after(0, resume)
 
     def render_data(self, data):
         self.last_data = data
@@ -347,7 +572,7 @@ class Console:
         navigating = self.session.get("mode") == "navigation"
         receiving = any(topic["age_s"] is not None and topic["age_s"] < 2 for topic in data["topics"].values())
         self.status["connection"].set(("ROS: đang nhận trực tiếp" if receiving else "ROS: chưa nhận dữ liệu mới")
-                                      + f" · Pi {self.connected_settings['host']}" + (" · SSH chưa xác nhận" if not self.last_meta else ""))
+                                      + f" · Pi {self.connected_settings['host']}" + (" · SSH đang tự nối lại" if self.connection.failures else ""))
         if data["mapping_ready"]:
             info = data["map"]
             mode = "Navigation · map đã lưu" if navigating else "Mapping · map đang dựng"
@@ -372,7 +597,7 @@ class Console:
         if velocity:
             motion.append(f"v={velocity['linear']:+.3f} m/s, ω={velocity['angular']:+.3f} rad/s")
         self.status["motion"].set(" · ".join(motion) or "Chưa có dữ liệu mới")
-        self.status["navigation"].set("Có action server — mở RViz để vận hành" if data["navigation_available"]
+        self.status["navigation"].set("Đã phát hiện action server — kiểm tra trạng thái Nav2 active trong RViz" if data["navigation_available"]
                                       else "Navigation đang khởi động/chưa có action server" if navigating
                                       else "Chưa có action server Nav2 trong phiên hiện tại")
         for topic, info in data["topics"].items():
@@ -384,18 +609,26 @@ class Console:
             else:
                 self.topic_tree.insert("", "end", iid=topic, text=topic, values=values)
 
-    def require_session(self):
+    def require_session(self, resume=None, *, allow_telemetry=False):
         settings = self.config()
-        if not self.session or settings != self.connected_settings or time.monotonic() - self.last_meta > 30:
-            messagebox.showinfo("Kết nối robot", "Bấm Kết nối / Kiểm tra để xác nhận phiên robot trước.")
-            return None
-        return settings
+        same_robot = settings == self.connected_settings
+        if (self.session and same_robot and
+                ((not self.connection.failures and time.monotonic() - self.last_meta <= 30)
+                 or (allow_telemetry and self.telemetry_fresh()))):
+            return settings
+        if resume is not None and self.pending_session is None:
+            expected = self.session_identity(self.session) if same_robot else None
+            self.pending_session = (settings, expected, time.monotonic() + 20, resume)
+            self.append('Đang tự xác nhận kết nối để thực hiện thao tác…')
+        self.check(quiet=True)
+        return None
 
     def open_view(self, action):
-        settings = self.require_session()
+        settings = self.require_session(lambda: self.open_view(action), allow_telemetry=True)
         if not settings:
             return
-        if action == "navigation" and not (self.last_data or {}).get("navigation_available"):
+        if (action == "navigation" and self.session.get("mode") != "navigation"
+                and not (self.last_data or {}).get("navigation_available")):
             messagebox.showinfo("Navigation", "Chưa nhận được action server Nav2 trong phiên hiện tại. Kiểm tra chế độ và trạng thái robot trước.")
             return
         if action in self.viewers and self.viewers[action].poll() is None:
@@ -404,12 +637,12 @@ class Console:
         log = STATE / (action + ".log")
         with log.open("w", encoding="utf-8") as file:
             self.viewers[action] = subprocess.Popen(session_args(settings, action, self.session),
-                                                    stdout=file, stderr=subprocess.STDOUT,
+                                                    stdin=subprocess.DEVNULL, stdout=file, stderr=subprocess.STDOUT,
                                                     creationflags=HIDDEN)
         self.append(f"Đang mở RViz ({action}). Log: {log}")
 
     def save_map(self):
-        settings = self.require_session()
+        settings = self.require_session(self.save_map)
         if not settings:
             return
         if self.session.get("mode") == "navigation":
@@ -432,7 +665,7 @@ class Console:
         self.task("Đọc log robot…", lambda: remote(settings, "logs"))
 
     def reset_map(self):
-        settings = self.require_session()
+        settings = self.require_session(self.reset_map)
         if not settings:
             return
         if self.session.get("mode") == "navigation" or (self.last_data or {}).get("navigation_available"):
@@ -479,12 +712,37 @@ class Console:
         self.task("Kiểm tra / bắt đầu mapping…" if action == "start" else "Đang dừng mapping…",
                   lambda: remote(settings, action), finished)
 
+    def start_navigation(self):
+        if self.busy or self.stop_busy:
+            return
+        selected = self.selected_record()
+        if not selected:
+            self.tabs.select(self.tab_frames['maps'])
+            return
+        settings, record = selected
+        domain = self.task_domain_value()
+        def finished(result):
+            report = json.loads(result)
+            existing = report.get('status') == 'already_running'
+            self.session = self.last_data = None
+            self.last_check = 0
+            self.stop_stream()
+            self.status['navigation'].set('Đang kiểm tra Nav2…')
+            self.append(("Nav đang chạy với map " if existing else "Đã gửi yêu cầu bắt đầu Nav với map ")
+                        + record['name'] + f" · domain {domain}. Mở RViz Navigation để đặt vị trí robot.")
+            self.root.after(0 if existing else 2000, self.check)
+        self.task("Đang kiểm tra / bắt đầu Nav…",
+                  lambda: remote(settings, 'start-nav', '--name', record['name'],
+                                 '--revision', record['revision'], '--domain', str(domain)), finished)
+
     def tick(self):
         now = time.monotonic()
         if self.stream and self.session:
             data, updated, frames = self.stream.snapshot()
             if frames != self.stream_seen:
                 self.stream_seen = frames
+                if self.connection.stream_received():
+                    self.append('Đã phục hồi luồng trạng thái ROS trên PC.')
                 self.render_data(data)
             if (not self.stream.alive()) or (updated and now - updated > 2):
                 self.last_data = None
@@ -502,8 +760,29 @@ class Console:
             if code is not None:
                 self.append(f"RViz {action} đã đóng (mã {code})." + (f" Xem {STATE / (action + '.log')}" if code else ""))
                 del self.viewers[action]
-        if self.auto.get() and not self.connecting and now - self.last_attempt >= 15:
-            self.check()
+        if self.auto.get():
+            try:
+                settings = self.current_settings()
+            except ValueError:
+                settings = None
+            if settings is not None:
+                if self.session and settings != self.connected_settings:
+                    self.stop_stream()
+                    self.session = self.last_data = None
+                    self.last_check = 0
+                    self.status['connection'].set('Cấu hình đã đổi — đang tự kết nối tới robot đã chọn')
+                    for key in ('mapping', 'sensors', 'motion', 'navigation'):
+                        self.status[key].set('Đang chờ kết nối mới')
+                if self.session and settings == self.connected_settings:
+                    _, updated, _ = self.stream.snapshot() if self.stream else (None, 0, 0)
+                    if self.connection.restart_due(now, alive=bool(self.stream and self.stream.alive()), updated=updated):
+                        if not self.connection.stream_recovering:
+                            self.append('Đang tự phục hồi luồng trạng thái ROS trên PC…')
+                        self.connection.stream_recovering = True
+                        self.last_data = None
+                        self.start_stream(settings, self.stream_key)
+                if not self.connecting and (settings != self.requested_settings or now >= self.connection.next_check):
+                    self.check(quiet=True)
         if not self.closed:
             self.root.after(100, self.tick)
 
@@ -515,6 +794,7 @@ class Console:
 
     def close(self):
         self.closed = True
+        self.pending_session = None
         if self.stream:
             stream, self.stream = self.stream, None
             threading.Thread(target=stream.close, daemon=False).start()
@@ -523,19 +803,104 @@ class Console:
     def open_logs(self):
         os.startfile(STATE)
 
+    def tab_changed(self, event=None):
+        if self.tabs.select() == str(self.tab_frames['tasks']):
+            self.refresh_tasks()
+
+    def task_domain_value(self):
+        domain = int(self.task_domain.get())
+        if not 0 <= domain <= 232:
+            raise ValueError("ROS domain phải trong khoảng 0–232")
+        return domain
+
+    def refresh_tasks(self):
+        if self.busy or self.stop_busy:
+            return
+        settings, domain = self.config(), self.task_domain_value()
+        def loaded(result):
+            self.task_settings = settings
+            self.task_list_domain = domain
+            self.task_records = {str(item['pid']): item for item in json.loads(result)['tasks']}
+            self.tasks_tree.delete(*self.tasks_tree.get_children())
+            for pid, item in self.task_records.items():
+                self.tasks_tree.insert('', 'end', iid=pid, text=item['label'],
+                                       values=(pid, item['domain'], item['source']))
+            self.append(f"Có {len(self.task_records)} tác vụ robot trong domain {domain}.")
+        self.task("Đang đọc tác vụ robot…", lambda: remote(settings, 'tasks', '--domain', str(domain)), loaded)
+
+    def stop_robot_tasks(self, scope, *, selected=False):
+        if self.stop_busy:
+            return
+        settings, domain = self.config(), self.task_domain_value()
+        if selected:
+            if settings != getattr(self, 'task_settings', None) or domain != getattr(self, 'task_list_domain', None):
+                messagebox.showinfo("Tác vụ", "Hãy tải lại danh sách cho kết nối/domain đã chọn.")
+                return
+            tasks = [self.task_records[pid] for pid in self.tasks_tree.selection() if pid in self.task_records]
+            if not tasks:
+                messagebox.showinfo("Tác vụ", "Chọn tác vụ cần dừng trong danh sách.")
+                return
+            self.confirm_stop_tasks(settings, domain, scope, tasks)
+        else:
+            self.control_task("Đang kiểm tra tác vụ cần dừng…",
+                              lambda: remote(settings, 'tasks', '--domain', str(domain), '--scope', scope),
+                              lambda result: self.confirm_stop_tasks(settings, domain, scope, json.loads(result)['tasks']))
+
+    def confirm_stop_tasks(self, settings, domain, scope, tasks):
+        if not tasks:
+            self.append(f"Không có tác vụ {scope} đang chạy trong domain {domain}.")
+            self.check()
+            self.root.after(100, self.refresh_tasks)
+            return
+        details = '\n'.join(f"• {item['label']} — PID {item['pid']}" for item in tasks)
+        warning = '\n\nMap đang tạo chưa lưu sẽ bị mất. Các map đã lưu được giữ.' if any(
+            item['kind'] == 'launch' and item['mode'] == 'mapping' for item in tasks) else ''
+        if not messagebox.askyesno("Dừng tác vụ robot?", f"Dừng các tác vụ sau trên Pi {settings['host']}, domain {domain}?\n\n" + details + warning,
+                                   default='no', icon='warning'):
+            self.append("Đã hủy yêu cầu dừng tác vụ.")
+            return
+        targets = base64.b64encode(json.dumps([dict(pid=item['pid'], start_ticks=item['start_ticks']) for item in tasks]).encode()).decode('ascii')
+        def finished(result):
+            report = json.loads(result)
+            if report['status'] == 'partial':
+                self.append("Chưa dừng hết tác vụ. PID còn chạy: " + ', '.join(map(str, report['remaining'])))
+            elif report['status'] == 'nothing_running':
+                self.append("Các tác vụ đã kết thúc trước khi gửi yêu cầu dừng.")
+            else:
+                self.append(f"Đã dừng {len(report['stopped'])} tác vụ robot và các tiến trình con.")
+            self.check()
+            self.root.after(300, self.refresh_tasks)
+        self.control_task("Đang dừng tác vụ robot…", lambda: remote(settings, 'stop-tasks', '--domain', str(domain),
+                          '--scope', scope, '--targets', targets), finished)
+
     def build_map_tab(self, parent):
-        row = ttk.Frame(parent)
-        row.pack(fill="x", pady=(0, 8))
-        for text, action in (("Tải lại danh sách", self.refresh_maps), ("Tải map về PC", self.download_map),
-                             ("Đổi tên", self.rename_map), ("Chuyển vào thùng rác", self.delete_map)):
-            self.button(row, text, action).pack(side="left", padx=(0, 8))
+        for actions in ((("Tải lại danh sách", self.refresh_maps), ("Tải map về PC", self.download_map)),
+                        (("Đổi tên", self.rename_map), ("Chuyển vào thùng rác", self.delete_map))):
+            row = ttk.Frame(parent)
+            row.pack(fill="x", pady=(0, 8))
+            for text, action in actions:
+                button = self.button(row, text, action)
+                if text == 'Chuyển vào thùng rác':
+                    button.configure(style='Danger.TButton')
+                button.pack(side="left", padx=(0, 8))
         ttk.Label(parent, text="Chọn map chỉ để xem trước; map đang dựng không bị thay đổi.",
                   wraplength=1000).pack(side="bottom", anchor="w", pady=(8, 0))
-        panes = ttk.Panedwindow(parent, orient="horizontal")
+        panes = ttk.Frame(parent)
         panes.pack(fill="both", expand=True)
         left, right = ttk.Frame(panes), ttk.Frame(panes)
-        panes.add(left, weight=2)
-        panes.add(right, weight=3)
+        orientation = [None]
+        def arrange(event):
+            wide = event.width >= 720
+            if wide == orientation[0]:
+                return
+            orientation[0] = wide
+            left.grid(row=0, column=0, sticky='nsew', padx=(0, 14) if wide else 0, pady=0 if wide else (0, 14))
+            right.grid(row=0 if wide else 1, column=1 if wide else 0, sticky='nsew')
+            panes.columnconfigure(0, weight=2 if wide else 1)
+            panes.columnconfigure(1, weight=3 if wide else 0)
+            panes.rowconfigure(0, weight=1)
+            panes.rowconfigure(1, weight=0 if wide else 1)
+        parent.bind('<Configure>', arrange, add='+')
         self.maps_tree = ttk.Treeview(left, columns=("size", "when"), selectmode="browse", height=8)
         self.maps_tree.heading("#0", text="Tên map")
         self.maps_tree.column("#0", width=185, minwidth=120)
@@ -549,13 +914,13 @@ class Console:
         self.maps_tree.bind("<<TreeviewSelect>>", self.preview_map)
         self.map_info = tk.StringVar(value="Chọn một map để xem trước")
         ttk.Label(right, textvariable=self.map_info, wraplength=550).pack(fill="x", pady=(0, 6))
-        self.preview_canvas = tk.Canvas(right, background="#252b36", highlightthickness=0, height=250)
+        self.preview_canvas = tk.Canvas(right, background="#101014", highlightthickness=0, height=250)
         self.preview_canvas.pack(fill="both", expand=True)
         self.preview_canvas.bind("<Configure>", self.draw_preview)
         self.preview_image = None
 
-    def refresh_maps(self):
-        if self.busy:
+    def refresh_maps(self, *, background=False):
+        if self.busy or self.stop_busy or (background and self.pending_session is not None):
             return
         settings = self.config()
         selected = self.maps_tree.selection()
@@ -634,6 +999,9 @@ class Console:
     def draw_preview(self, event=None):
         self.preview_canvas.delete("all")
         if self.preview_image is None:
+            width, height = self.preview_canvas.winfo_width(), self.preview_canvas.winfo_height()
+            self.preview_canvas.create_text(width / 2, height / 2, text='Chọn một bản đồ\nđể xem trước',
+                                            fill='#aaa9ad', font=('Segoe UI', 11), justify='center')
             return
         width, height = max(1, self.preview_canvas.winfo_width()-12), max(1, self.preview_canvas.winfo_height()-12)
         ratio = min(width / self.preview_image.width(), height / self.preview_image.height())

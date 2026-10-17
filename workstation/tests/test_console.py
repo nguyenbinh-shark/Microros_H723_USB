@@ -17,6 +17,14 @@ PROFILE = '<profiles xmlns="' + NS["dds"] + '"><participant profile_name="robot"
 
 
 class ConsoleTests(unittest.TestCase):
+    def setUp(self):
+        defaults = patch.dict(console.DEFAULTS, host='fixture.local', user='operator')
+        defaults.start()
+        self.addCleanup(defaults.stop)
+        resolver = patch.object(console, 'resolve_robot_address', return_value='192.168.0.120')
+        resolver.start()
+        self.addCleanup(resolver.stop)
+
     def test_reset_requires_same_real_mapping_session(self):
         real = dict(pid=100, mode="mapping", simulated_time=False, domain=0)
         replay = dict(pid=200, mode="mapping", simulated_time=True, domain=73)
@@ -111,7 +119,7 @@ class ConsoleTests(unittest.TestCase):
              patch.object(console, "capture", return_value='{"mapping_ready":true}'):
             report = console.check_connection(console.DEFAULTS)
         self.assertEqual(report["session"], real)
-        command.assert_called_once_with(console.DEFAULTS, "probe", real)
+        command.assert_called_once_with(console.DEFAULTS, "probe", real, address='192.168.0.120')
 
     def test_ambiguous_live_sessions_never_guess_domain(self):
         real = dict(pid=41, mode="mapping", simulated_time=False, domain=0)
@@ -162,7 +170,8 @@ class ConsoleTests(unittest.TestCase):
         app.root.after.assert_called_once_with(0, app.check)
 
     def test_remote_ssh_uses_stdin_and_quotes_arguments(self):
-        with patch.object(console, "capture", return_value="ok") as capture:
+        with patch.object(console, 'resolve_robot_address', return_value='192.168.0.120'), \
+             patch.object(console, "capture", return_value="ok") as capture:
             console.remote(console.DEFAULTS, "save", "--name", "name with spaces; touch nope")
         command = capture.call_args.args[0]
         self.assertIn("BatchMode=yes", command)
