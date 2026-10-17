@@ -29,8 +29,12 @@ extern "C" {
  */
 #define RC_CH_VX           0                      /* CH1 = vertical / throttle      */
 #define RC_CH_WZ           1                      /* CH2 = horizontal / steering     */
-#define RC_VX_SIGN         (-1)                   /* -1 = this radio sends stick-up low  */
-#define RC_WZ_SIGN         (+1)                   /* +1 = this radio sends stick-left low */
+/* Both signs were flipped on 2026-10-17 together with MOTOR_LEFT/RIGHT_SIGN in
+ * robot_config.h (the wheel frame now matches the URDF, LiDAR end = +x), so the
+ * sticks keep driving RPBot exactly as before: stick-up toward the end without
+ * the LiDAR, stick-left turns the robot left as seen driving that way. */
+#define RC_VX_SIGN         (+1)                   /* radio sends stick-up low      */
+#define RC_WZ_SIGN         (-1)                   /* radio sends stick-left low    */
 
 /* ── Motor arm button ───────────────────────────────────────────────────────
  * A channel on the transmitter that enables / disables both wheels, mapped to

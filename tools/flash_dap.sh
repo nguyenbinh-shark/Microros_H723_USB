@@ -5,6 +5,8 @@
 # .elf/.hex are written to their own addresses, .bin to 0x08000000.
 # OpenOCD lookup: $OPENOCD, then openocd on PATH, then the copy bundled with STM32CubeIDE.
 # Override scripts dir: OPENOCD_SCRIPTS=/path/to/scripts
+# Flaky wireless link ("CMD_INFO failed", "command mismatch"): pick the CMSIS-DAP backend
+# and a slower SWD clock, e.g.  DAP_BACKEND=hid DAP_SPEED=400 ./tools/flash_dap.sh
 
 set -euo pipefail
 
@@ -46,7 +48,13 @@ ARGS=()
 if [ -n "$SCRIPTS" ]; then
     ARGS+=(-s "$(native_path "$SCRIPTS")")
 fi
+if [ -n "${DAP_BACKEND:-}" ]; then
+    ARGS+=(-c "adapter driver cmsis-dap" -c "cmsis-dap backend $DAP_BACKEND")
+fi
 ARGS+=(-f "$(native_path "$SCRIPT_DIR/openocd_dap.cfg")")
+if [ -n "${DAP_SPEED:-}" ]; then
+    ARGS+=(-c "adapter speed $DAP_SPEED")
+fi
 
 if [ "${1:-}" = "--server" ]; then
     echo "[INFO] GDB server on localhost:3333 (Ctrl+C to stop)"

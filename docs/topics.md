@@ -53,7 +53,7 @@ Each command topic maps to exactly one RobStride actuator `run_mode`:
   - `angular.z` (float64, interpreted as float32): Yaw rotational velocity in **$\text{rad/s}$**.
 - **Differential Kinematics:**
   $$\omega_L = \frac{v_x - \frac{W}{2}\omega_z}{R}, \quad \omega_R = \frac{v_x + \frac{W}{2}\omega_z}{R}$$
-  where $R = \text{WHEEL\_RADIUS} = 0.062455\text{ m}$ and $W = \text{WHEEL\_BASE} = 0.345\text{ m}$, matching the current Pi bridge/URDF profile. `MOTOR_LEFT_SIGN` / `MOTOR_RIGHT_SIGN` are applied, then the result is written to the motor's `SPD_REF` parameter.
+  where $R = \text{WHEEL\_RADIUS} = 0.060\text{ m}$ and $W = \text{WHEEL\_BASE} = 0.345\text{ m}$, matching the current Pi bridge/URDF profile. `MOTOR_LEFT_SIGN` / `MOTOR_RIGHT_SIGN` are applied, then the result is written to the motor's `SPD_REF` parameter.
 - **Saturation:** if either wheel would exceed $20\text{ rad/s}$ ($1.2491\text{ m/s}$), **both** wheel speeds are scaled by the same factor so the faster one lands on the limit. The curvature $\omega_z / v_x$ is preserved and the robot stays on the planned path; it only moves slower than commanded. Keep $|v_x| + \frac{W}{2}|\omega_z| \le 1.2491\text{ m/s}$ in the Nav2 limits to avoid scaling entirely.
 - **Validation:** a message with NaN/Inf in `linear.x` or `angular.z` is dropped and logged on UART7.
 - **Acceleration:** ramped inside the motor at `VEL_MODE_ACC_RAD` = $20\text{ rad/s}^2$ ($1.2491\text{ m/s}^2$ at the wheel).

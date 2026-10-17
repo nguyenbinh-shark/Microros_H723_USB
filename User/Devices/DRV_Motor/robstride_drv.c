@@ -209,7 +209,7 @@ int rs_ext_parse_feedback(rs_ext_fb_t *fb, uint32_t rx_ext_id, const uint8_t *rx
 
     float raw_pos = uint_to_float(p_raw, RS_EXT_P_MIN, RS_EXT_P_MAX, 16);
     fb->pos_raw = raw_pos;
-    fb->vel     = uint_to_float(vel_raw, RS_EXT_V_MIN, RS_EXT_V_MAX, 16);
+    fb->vel     = uint_to_float(vel_raw, RS_EXT_FB_V_MIN, RS_EXT_FB_V_MAX, 16);
     fb->tor     = uint_to_float(tor_raw, RS_EXT_T_MIN, RS_EXT_T_MAX, 16);
     fb->temp    = ((float)tmp_raw) / 10.0f;
 
@@ -236,8 +236,8 @@ int rs_ext_parse_feedback(rs_ext_fb_t *fb, uint32_t rx_ext_id, const uint8_t *rx
 
        Limit, unchanged from the delta version: a shaft moving more than half a
        span (4pi, two revolutions) between samples is indistinguishable from a
-       wrap. At the 20 rad/s this protocol tops out at, that takes a 600 ms hole
-       in the feedback stream.
+       wrap. At the 30 rad/s the feedback scale tops out at, that takes a 420 ms
+       hole in the feedback stream.
 
        Rounding is a cast rather than floorf() to keep the ISR out of libm; the
        argument is a turn count, nowhere near the int32 range. */

@@ -6,6 +6,9 @@
 
 **Tiếng Việt** | [**English**](README.md)
 
+**Điều khiển từ PC:** [RPBot Console](workstation/README.md) mở RViz xem map thật,
+kiểm tra dữ liệu robot, lưu map và quản lý khởi động mapping bằng shortcut trên Desktop.
+
 Firmware nhúng hiệu năng cao cho robot di động dẫn động vi sai 2 bánh sử dụng vi điều khiển **STM32H723VGT6** (ARM Cortex-M7 @ 192 MHz). Board đóng vai trò là một **ROS 2 Jazzy node** hoàn chỉnh qua **micro-ROS** giao tiếp bằng **USB CDC Virtual COM Port (12 Mbps)**, điều khiển 2 động cơ **RobStride / CyberGear** qua 2 bus FDCAN độc lập kèm bộ ước lượng tư thế IMU và màn hình hiển thị trực quan.
 
 ---

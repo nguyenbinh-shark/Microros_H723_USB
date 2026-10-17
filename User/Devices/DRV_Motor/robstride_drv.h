@@ -58,6 +58,15 @@
 #define RS_EXT_T_MIN   (-60.0f)
 #define RS_EXT_T_MAX   (60.0f)
 
+/* Speed scale of the type-2 / type-24 FEEDBACK frame, separate from the command
+   range above. The actuators fitted to RPBot report speed over +-30 rad/s
+   (the CyberGear feedback range). Decoding it with the +-20 rad/s command range
+   made /motor_fb velocity, and every wheel angle integrated from it, 0.67x too
+   small: measured 2026-10-17 against LiDAR scan matching and the IMU yaw with
+   the 0.060 m wheel. The command range stays at +-20 rad/s on purpose. */
+#define RS_EXT_FB_V_MIN (-30.0f)
+#define RS_EXT_FB_V_MAX (30.0f)
+
 /* Continuous-angle accumulator (rs_ext_parse_feedback) tuning.
    RAIL_LSB    how close to code 0x0000 / 0xFFFF still counts as "the reported
                angle has saturated". 64 LSB is ~0.025 rad. It has to be wider

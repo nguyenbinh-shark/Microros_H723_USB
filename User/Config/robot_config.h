@@ -12,9 +12,9 @@
 /* ── Mechanical parameters — single source of truth for whole project ─ */
 
 /**
- * @brief Wheel radius in meters (bán kính bánh xe)
+ * @brief Wheel radius in meters (bán kính bánh xe), measured on RPBot.
  */
-#define WHEEL_RADIUS      0.062455f
+#define WHEEL_RADIUS      0.060f
 
 /**
  * @brief Distance between left and right wheels in meters (khoảng cách 2 bánh)
@@ -28,9 +28,16 @@
  * Sign: +1.0f if positive motor velocity → wheel moves FORWARD
  *       -1.0f if positive motor velocity → wheel moves BACKWARD
  * (mirrored-mount motors face each other, one side is inverted)
+ *
+ * "Forward" is the robot +x axis of the URDF: the end carrying the LiDAR.
+ * Calibrated 2026-10-17 on RPBot by matching /motor_fb against LiDAR scan
+ * matching and the IMU: with (+1, -1) both the travel direction and the yaw
+ * of the wheel odometry came out inverted, so both signs were flipped.
  */
-#define MOTOR_LEFT_SIGN   ( 1.0f)  /* motor ID 1 — FDCAN1 */
-#define MOTOR_RIGHT_SIGN  (-1.0f)  /* motor ID 1 — FDCAN3 (separate bus) */
+#define MOTOR_LEFT_SIGN   (-1.0f)  /* motor ID 1 — FDCAN1 */
+#define MOTOR_RIGHT_SIGN  ( 1.0f)  /* motor ID 1 — FDCAN3 (separate bus) */
+/* The SBUS stick signs (RC_VX_SIGN / RC_WZ_SIGN in bsp_sbus.h) were flipped
+   together with these so the radio drives the robot the same way as before. */
 
 /* ── CAN transceiver enable pins (PC13 / PC14 / PC15) ───────────────── */
 

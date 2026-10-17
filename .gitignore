@@ -12,6 +12,9 @@ build/
 *.axf
 *.srec
 
+# Standalone flasher built from tools/dap_flasher.pyw with PyInstaller (see its docstring)
+tools/*.exe
+
 # ==============================================================================
 # micro-ROS Prebuilt Static Libraries (Fetched via tools/fetch_libmicroros.sh)
 # ==============================================================================

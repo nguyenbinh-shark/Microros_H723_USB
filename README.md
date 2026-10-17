@@ -6,6 +6,9 @@
 
 [**Tiếng Việt**](README.vi.md) | **English**
 
+**PC controls:** [RPBot Console](workstation/README.md) opens live RViz mapping,
+checks robot data, saves maps and manages mapping startup from a desktop shortcut.
+
 High-performance embedded firmware for a differential-drive mobile robot powered by the **STM32H723VGT6** (ARM Cortex-M7 @ 192 MHz). The board acts as a native **ROS 2 Jazzy node** via **micro-ROS** over High-Speed **USB CDC Virtual COM Port (12 Mbps)**, controlling dual **RobStride / CyberGear** actuators via dual independent FDCAN buses with real-time onboard attitude estimation and diagnostic display.
 
 ---
