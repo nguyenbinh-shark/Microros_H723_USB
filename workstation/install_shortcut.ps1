@@ -11,7 +11,7 @@ if (Test-Path -LiteralPath $exePath) {
     $targetPath = Join-Path (Split-Path -Parent $pythonPath) 'pythonw.exe'
     if (-not (Test-Path -LiteralPath $targetPath)) { throw "Missing $targetPath" }
     $targetArguments = '"' + (Join-Path $consoleRoot 'launch_rpbot.pyw') + '"'
-    $iconPath = Join-Path $consoleRoot 'assets\shark.ico'
+    $iconPath = Join-Path $consoleRoot 'assetspbot-studio.ico'
 }
 $desktopPath = [Environment]::GetFolderPath('Desktop')
 $shortcutPath = Join-Path $desktopPath 'RPBot Console.lnk'

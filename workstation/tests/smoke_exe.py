@@ -24,10 +24,10 @@ from preview_studio import capture_window
 
 FILES = ['map_library.py', 'robot_tasks.py', 'remote_ops.py', 'ros_session.py',
          'ros_session.sh', 'mapping.rviz', 'navigation.rviz',
-         'assets/shark-logo.png', 'assets/shark.ico']
+         'assets/rpbot-studio.png', 'assets/rpbot-studio.ico']
 
 
-def find_window(executable):
+def find_window(executable, title_contains='RPBot Studio'):
     """Find only a window owned by the exact isolated executable copy."""
     user, kernel = ctypes.windll.user32, ctypes.windll.kernel32
     callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
@@ -43,7 +43,7 @@ def find_window(executable):
     def visit(hwnd, _):
         title = ctypes.create_unicode_buffer(512)
         user.GetWindowTextW(hwnd, title, len(title))
-        if 'RPBot Studio' not in title.value:
+        if title_contains not in title.value:
             return True
         pid = wintypes.DWORD()
         user.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
@@ -64,6 +64,7 @@ def find_window(executable):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--exe', type=Path, default=HERE / 'dist' / 'RPBotStudio.exe')
+    parser.add_argument('--language', choices=('vi', 'en'), default='vi')
     parser.add_argument('--wsl', action='store_true')
     parser.add_argument('--distro', default='Ubuntu-24.04')
     parser.add_argument('--wsl-user', default='shark')
@@ -84,7 +85,8 @@ def main():
                    for name in members)
     modules = archive.open_embedded_archive('PYZ.pyz').toc
     assert all(name in modules for name in ('rpbot_console', 'console_layout', 'tkinter',
-                                           'network_probe', 'robot_status', 'status_dashboard'))
+                                           'network_probe', 'robot_status', 'status_dashboard',
+                                           'ui_language', 'ui_translations'))
     pe = pefile.PE(str(args.exe), fast_load=True)
     assert pe.OPTIONAL_HEADER.Subsystem == 2, 'EXE must use the windowed subsystem'
     assert pe.FILE_HEADER.Machine == 0x8664, 'Expected Windows x64'
@@ -101,6 +103,10 @@ def main():
         delivery, unpack, profile = (scratch / name for name in ('Ứng dụng rời', 'unpack', 'profile'))
         for directory in (delivery, unpack, profile):
             directory.mkdir()
+        config = profile / 'RPBotConsole' / 'settings.json'
+        if args.language == 'en':
+            config.parent.mkdir()
+            config.write_text('{"language": "en"}', encoding='utf-8')
         copied = delivery / 'RPBotStudio.exe'
         shutil.copy2(args.exe, copied)
         env = dict(os.environ, LOCALAPPDATA=str(profile), TEMP=str(unpack), TMP=str(unpack),
@@ -125,13 +131,16 @@ def main():
             hwnd, title = window
             assert 'Trần Nguyên Bình' in title
             time.sleep(0.8)
-            assert capture_window(SimpleNamespace(winfo_id=lambda: hwnd), output / 'exe-offline.png')
+            assert capture_window(SimpleNamespace(winfo_id=lambda: hwnd), output / f'exe-offline-{args.language}.png')
             bundles = list(unpack.glob('_MEI*'))
             assert len(bundles) == 1, bundles
             bundle = bundles[0]
             for name in FILES:
                 assert (bundle / name).read_bytes() == (HERE / name).read_bytes()
-            assert not (profile / 'RPBotConsole' / 'settings.json').exists()
+            if args.language == 'en':
+                assert json.loads(config.read_text(encoding='utf-8')) == {'language': 'en'}
+            else:
+                assert not config.exists()
             assert not (profile / 'RPBotConsole' / 'telemetry.log').exists()
             assert list(delivery.iterdir()) == [copied], 'Only the EXE may be delivered'
             if args.wsl:
@@ -168,6 +177,7 @@ def main():
     (STATE / 'exe-validation.json').write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding='utf-8')
     print('PASS: one-file x64 GUI, isolated folder with Vietnamese/spaces, no Python on PATH, '
           'embedded resources match source, fresh offline settings, clean exit; WSL:', report['wsl_checked'])
+    print('Language:', args.language)
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

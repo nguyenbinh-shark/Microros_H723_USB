@@ -7,6 +7,7 @@ import webbrowser
 import branding as brand
 import studio_theme as theme
 from status_dashboard import COLORS, StatusDashboard
+from ui_language import picker
 
 PAGES = (
     ('mapping', '01', 'Mapping', 'Mapping · Tạo bản đồ', 'Bắt đầu quét → xem trong RViz → lưu map trước khi dừng.'),
@@ -15,7 +16,7 @@ PAGES = (
     ('tasks', '04', 'Tác vụ', 'Tác vụ đang chạy', 'Xem phiên robot và dừng đúng tác vụ trong domain đã chọn.'),
     ('debug', '05', 'Debug', 'Debug · Dữ liệu & nhật ký', 'Kiểm tra tuổi bản tin, trạng thái chi tiết và log robot.'),
     ('settings', '06', 'Kết nối', 'Kết nối robot', 'Địa chỉ Pi, tài khoản SSH và cấu hình WSL trên PC.'),
-    ('about', '07', 'Giới thiệu', 'RPBot Studio · Shark', 'Thông tin tác giả và liên hệ.'),
+    ('about', '07', 'Giới thiệu', 'RPBot Studio', 'Thông tin tác giả và liên hệ.'),
 )
 
 
@@ -193,7 +194,7 @@ def build_about(app, page):
     panel.pack(fill='x', pady=(0, 20))
     if app.brand_logo:
         tk.Label(panel, image=app.brand_logo, background=theme.INK).pack(side='left', padx=(0, 16))
-    tk.Label(panel, text='SHARK\nRPBOT STUDIO', background=theme.INK, foreground=theme.PAPER,
+    tk.Label(panel, text='RPBOT STUDIO\nMAPPING · NAVIGATION', background=theme.INK, foreground=theme.PAPER,
              font=('Bahnschrift', 17, 'bold'), justify='left').pack(side='left')
     ttk.Label(page, text=brand.AUTHOR, font=('Segoe UI', 19, 'bold')).pack(anchor='w')
     ttk.Label(page, text=brand.AUTHOR_EN + '  /  ' + brand.BIO, style='Muted.TLabel',
@@ -216,23 +217,21 @@ def build(app):
     theme.apply(root)
     app.brand_logo = None
     if brand.LOGO.is_file():
-        app.brand_logo = tk.PhotoImage(file=str(brand.LOGO)).subsample(5, 5)
-        root.iconphoto(True, tk.PhotoImage(file=str(brand.LOGO)))
-    if brand.ICON.is_file():
-        try:
-            root.iconbitmap(str(brand.ICON))
-        except tk.TclError:
-            pass
+        app.brand_logo = tk.PhotoImage(file=str(brand.LOGO))
+    try:
+        root.iconbitmap(default=str(brand.ICON))
+    except tk.TclError:
+        if app.brand_logo:
+            root.iconphoto(True, app.brand_logo)
     header = ttk.Frame(root, padding=(18, 8))
     header.pack(fill='x')
-    mark = tk.Frame(header, background=theme.INK, width=40, height=40)
-    mark.pack(side='left', padx=(0, 12))
-    mark.pack_propagate(False)
     if app.brand_logo:
-        tk.Label(mark, image=app.brand_logo, background=theme.INK).pack(expand=True)
+        tk.Label(header, image=app.brand_logo, background=theme.PAPER).pack(side='left', padx=(0, 12))
     ttk.Label(header, text='RPBOT', font=('Bahnschrift', 15, 'bold')).pack(side='left')
     ttk.Label(header, text=' /  STUDIO', style='Mono.TLabel').pack(side='left', padx=(6, 0))
-    ttk.Button(header, text='SHARK  ↗', style='Link.TButton', command=lambda: webbrowser.open(brand.WEBSITE)).pack(side='right')
+    ttk.Button(header, text='Tác giả  ↗', style='Link.TButton', command=lambda: webbrowser.open(brand.WEBSITE)).pack(side='right')
+    app.language_picker = picker(header, app.i18n, app.change_language)
+    app.language_picker.pack(side='right', padx=(12, 8))
     app.activity = tk.StringVar(value='Studio tự kết nối khi robot khả dụng')
     ttk.Label(header, textvariable=app.activity, style='Mono.TLabel', font=theme.MONO).pack(side='right', padx=(20, 22))
     line(root)
@@ -251,7 +250,7 @@ def build(app):
         app.sidebar_buttons[key] = button
     credit = tk.Frame(sidebar, background=theme.SUNKEN)
     credit.pack(side='bottom', fill='x', padx=12)
-    tk.Label(credit, text='CRAFTED BY SHARK', background=theme.SUNKEN, foreground=theme.MUTED,
+    tk.Label(credit, text='CRAFTED BY', background=theme.SUNKEN, foreground=theme.MUTED,
              font=('Consolas', 8)).pack(anchor='w')
     tk.Label(credit, text=brand.AUTHOR, background=theme.SUNKEN, foreground=theme.INK,
              font=('Segoe UI', 9, 'bold')).pack(anchor='w', pady=(8, 2))

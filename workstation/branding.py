@@ -1,4 +1,4 @@
-"""Public identity bundled from the owner's website; no runtime site dependency."""
+"""Author details from the owner's website plus the app's own icon; no runtime site dependency."""
 from pathlib import Path
 
 ASSETS = Path(__file__).with_name('assets')
@@ -9,5 +9,5 @@ WEBSITE = 'https://nguyenbinh-shark.github.io'
 GITHUB = 'https://github.com/nguyenbinh-shark'
 EMAIL = 'trannguyenbinh.shark@gmail.com'
 BIO = 'Cơ điện tử · Hệ thống điều khiển · Robotics'
-LOGO = ASSETS / 'shark-logo.png'
-ICON = ASSETS / 'shark.ico'
+LOGO = ASSETS / 'rpbot-studio.png'  # 40 px header mark, drawn by tools/make_app_icons.py
+ICON = ASSETS / 'rpbot-studio.ico'

@@ -23,6 +23,7 @@ from stream_client import TelemetryStream
 from connection_state import ConnectionState
 from network_probe import ping_ipv4, resolve_ipv4
 from map_library import map_name as validate_map_name
+from ui_language import Dialogs, Language, LANGUAGES
 
 HERE = Path(__file__).resolve().parent
 STATE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "RPBotConsole"
@@ -204,12 +205,20 @@ class Console:
         self.root = root
         STATE.mkdir(parents=True, exist_ok=True)
         self.settings = dict(DEFAULTS)
+        saved = {}
         config = STATE / "settings.json"
         if config.is_file():
             try:
-                self.settings.update(json.loads(config.read_text(encoding="utf-8")))
+                saved = json.loads(config.read_text(encoding="utf-8"))
+                if not isinstance(saved, dict):
+                    saved = {}
+                self.settings.update({key: value for key, value in saved.items() if key in DEFAULTS})
             except (ValueError, OSError):
                 pass
+        self.i18n = Language(saved.get('language', 'vi'))
+        self.dialogs = Dialogs(self.i18n, messagebox)
+        self.file_dialogs = Dialogs(self.i18n, filedialog)
+        self.input_dialogs = Dialogs(self.i18n, simpledialog)
         self.events = queue.Queue()
         self.busy = False
         self.session = None
@@ -237,6 +246,14 @@ class Console:
         self.closed = False
         root.report_callback_exception = lambda kind, error, trace: self.append("Lỗi thao tác: " + str(error))
         build_layout(self)
+        self.i18n.attach(root)
+        for variable in (self.activity, self.page_title, self.page_subtitle, self.page_number,
+                         self.selected_map_text, self.map_info, self.ping_status,
+                         self.dashboard.linear, self.dashboard.angular, *self.status.values()):
+            self.i18n.variable(variable)
+        self.i18n.tree(self.tasks_tree, text=True, columns=(2,))
+        self.i18n.tree(self.topic_tree, columns=(2,))
+        self.i18n.tree(self.maps_tree, columns=(0,))
         if not self.settings['host'] or not self.settings['user']:
             self.tabs.select(self.tab_frames['settings'])
             self.activity.set('Nhập thiết bị và tài khoản SSH trong Kết nối')
@@ -272,12 +289,26 @@ class Console:
     def config(self):
         settings = self.current_settings()
         if settings != self.settings:
-            (STATE / "settings.json").write_text(json.dumps(settings, indent=2), encoding="utf-8")
+            self.save_settings(settings)
             self.settings = dict(settings)
         return settings
 
+    def save_settings(self, settings):
+        (STATE / 'settings.json').write_text(json.dumps(dict(settings, language=self.i18n.code),
+                                                       indent=2, ensure_ascii=False), encoding='utf-8')
+
+    def change_language(self, code):
+        self.i18n.select(code)
+        self.language_picker.variable.set(LANGUAGES[self.i18n.code])
+        for card in self.dashboard.cards.values():
+            card.fit_detail()
+        try:
+            self.save_settings(self.settings)
+        except OSError as exc:
+            self.dialogs.showerror('Không lưu được ngôn ngữ', str(exc), parent=self.root)
+
     def append(self, text):
-        line = f"[{datetime.now():%H:%M:%S}] {text}\n"
+        line = f"[{datetime.now():%H:%M:%S}] {self.i18n.text(text)}\n"
         message = text.strip().casefold()
         if message.startswith(('lỗi', 'chưa dừng hết')):
             tag = 'error'
@@ -403,7 +434,7 @@ class Console:
             settings = self.config()
         except ValueError as exc:
             if not quiet:
-                messagebox.showerror("Cấu hình kết nối", str(exc))
+                self.dialogs.showerror("Cấu hình kết nối", str(exc))
             return
         self.connecting = True
         self.requested_settings = dict(settings)
@@ -553,7 +584,7 @@ class Console:
             self.append('Thao tác chưa thực hiện. Bạn có thể bấm lại nút thao tác khi sẵn sàng.')
             return
         if not self.session:
-            messagebox.showinfo('Phiên robot', 'Pi đã kết nối nhưng chưa có đúng một phiên Mapping/Navigation. Xem trạng thái hoặc bắt đầu phiên cần dùng.')
+            self.dialogs.showinfo('Phiên robot', 'Pi đã kết nối nhưng chưa có đúng một phiên Mapping/Navigation. Xem trạng thái hoặc bắt đầu phiên cần dùng.')
             return
         if expected is not None and expected != self.session_identity(self.session):
             self.append('Phiên robot đã đổi; thao tác chưa thực hiện. Kiểm tra phiên hiện tại rồi bấm lại nút thao tác.')
@@ -629,10 +660,10 @@ class Console:
             return
         if (action == "navigation" and self.session.get("mode") != "navigation"
                 and not (self.last_data or {}).get("navigation_available")):
-            messagebox.showinfo("Navigation", "Chưa nhận được action server Nav2 trong phiên hiện tại. Kiểm tra chế độ và trạng thái robot trước.")
+            self.dialogs.showinfo("Navigation", "Chưa nhận được action server Nav2 trong phiên hiện tại. Kiểm tra chế độ và trạng thái robot trước.")
             return
         if action in self.viewers and self.viewers[action].poll() is None:
-            messagebox.showinfo("RViz", "Cửa sổ RViz này đang mở.")
+            self.dialogs.showinfo("RViz", "Cửa sổ RViz này đang mở.")
             return
         log = STATE / (action + ".log")
         with log.open("w", encoding="utf-8") as file:
@@ -646,11 +677,11 @@ class Console:
         if not settings:
             return
         if self.session.get("mode") == "navigation":
-            messagebox.showinfo("Lưu map", "Robot đang Navigation với map đã lưu. Xem map trong tab Bản đồ đã lưu; tạo map mới cần chuyển sang Mapping.")
+            self.dialogs.showinfo("Lưu map", "Robot đang Navigation với map đã lưu. Xem map trong tab Bản đồ đã lưu; tạo map mới cần chuyển sang Mapping.")
             return
         name = self.map_name.get().strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name):
-            messagebox.showerror("Tên map", "Dùng 1–64 chữ không dấu, số, dấu - hoặc _.")
+            self.dialogs.showerror("Tên map", "Dùng 1–64 chữ không dấu, số, dấu - hoặc _.")
             return
         domain = str(self.session["domain"])
 
@@ -669,9 +700,9 @@ class Console:
         if not settings:
             return
         if self.session.get("mode") == "navigation" or (self.last_data or {}).get("navigation_available"):
-            messagebox.showinfo("Tạo map lại", "Hãy dừng chế độ navigation và chuyển sang mapping trước khi tạo map mới.")
+            self.dialogs.showinfo("Tạo map lại", "Hãy dừng chế độ navigation và chuyển sang mapping trước khi tạo map mới.")
             return
-        if not messagebox.askyesno(
+        if not self.dialogs.askyesno(
                 "Tạo map lại từ đầu?",
                 "Map hiện tại trong bộ nhớ sẽ bị bỏ và robot bắt đầu dựng map mới.\n\n"
                 "Các file map đã lưu trên Pi vẫn được giữ. Nếu muốn giữ map hiện tại, hãy lưu map trước khi tiếp tục.\n\n"
@@ -798,6 +829,10 @@ class Console:
         if self.stream:
             stream, self.stream = self.stream, None
             threading.Thread(target=stream.close, daemon=False).start()
+        for callback in self.root.tk.call('after', 'info'):
+            # Dashboard timers belong to child widgets. Cancel the timer here;
+            # each widget removes its own Tcl command during destroy().
+            self.root.tk.call('after', 'cancel', callback)
         self.root.destroy()
 
     def open_logs(self):
@@ -834,11 +869,11 @@ class Console:
         settings, domain = self.config(), self.task_domain_value()
         if selected:
             if settings != getattr(self, 'task_settings', None) or domain != getattr(self, 'task_list_domain', None):
-                messagebox.showinfo("Tác vụ", "Hãy tải lại danh sách cho kết nối/domain đã chọn.")
+                self.dialogs.showinfo("Tác vụ", "Hãy tải lại danh sách cho kết nối/domain đã chọn.")
                 return
             tasks = [self.task_records[pid] for pid in self.tasks_tree.selection() if pid in self.task_records]
             if not tasks:
-                messagebox.showinfo("Tác vụ", "Chọn tác vụ cần dừng trong danh sách.")
+                self.dialogs.showinfo("Tác vụ", "Chọn tác vụ cần dừng trong danh sách.")
                 return
             self.confirm_stop_tasks(settings, domain, scope, tasks)
         else:
@@ -855,7 +890,7 @@ class Console:
         details = '\n'.join(f"• {item['label']} — PID {item['pid']}" for item in tasks)
         warning = '\n\nMap đang tạo chưa lưu sẽ bị mất. Các map đã lưu được giữ.' if any(
             item['kind'] == 'launch' and item['mode'] == 'mapping' for item in tasks) else ''
-        if not messagebox.askyesno("Dừng tác vụ robot?", f"Dừng các tác vụ sau trên Pi {settings['host']}, domain {domain}?\n\n" + details + warning,
+        if not self.dialogs.askyesno("Dừng tác vụ robot?", f"Dừng các tác vụ sau trên Pi {settings['host']}, domain {domain}?\n\n" + details + warning,
                                    default='no', icon='warning'):
             self.append("Đã hủy yêu cầu dừng tác vụ.")
             return
@@ -947,15 +982,15 @@ class Console:
     def selected_record(self):
         selected = self.maps_tree.selection()
         if not selected:
-            messagebox.showinfo("Bản đồ", "Chọn một map trong danh sách trước.")
+            self.dialogs.showinfo("Bản đồ", "Chọn một map trong danh sách trước.")
             return None
         record = self.map_records.get(selected[0])
         if not record or "error" in record:
-            messagebox.showerror("Bản đồ", record.get("error", "Map không còn trong danh sách") if record else "Map không còn trong danh sách")
+            self.dialogs.showerror("Bản đồ", record.get("error", "Map không còn trong danh sách") if record else "Map không còn trong danh sách")
             return None
         settings = self.config()
         if settings != self.map_settings:
-            messagebox.showinfo("Bản đồ", "Kết nối đã đổi. Hãy tải lại danh sách map.")
+            self.dialogs.showinfo("Bản đồ", "Kết nối đã đổi. Hãy tải lại danh sách map.")
             return None
         return settings, record
 
@@ -1018,7 +1053,7 @@ class Console:
         if not selected:
             return
         settings, record = selected
-        destination = filedialog.askdirectory(title="Chọn thư mục tải map về PC", initialdir=str(Path.home() / "Downloads"))
+        destination = self.file_dialogs.askdirectory(title="Chọn thư mục tải map về PC", initialdir=str(Path.home() / "Downloads"))
         if not destination:
             return
         def worker():
@@ -1031,7 +1066,7 @@ class Console:
         if not selected:
             return
         settings, record = selected
-        name = simpledialog.askstring("Đổi tên map", "Tên mới (chữ không dấu, số, - hoặc _):", initialvalue=record["name"])
+        name = self.input_dialogs.askstring("Đổi tên map", "Tên mới (chữ không dấu, số, - hoặc _):", initialvalue=record["name"])
         if not name or name == record["name"]:
             return
         validate_map_name(name)
@@ -1044,7 +1079,7 @@ class Console:
         if not selected:
             return
         settings, record = selected
-        if not messagebox.askyesno("Chuyển map vào thùng rác?", "Chuyển map " + record["name"] +
+        if not self.dialogs.askyesno("Chuyển map vào thùng rác?", "Chuyển map " + record["name"] +
                                    " vào thư mục .trash trên Pi?\nMap đang dựng trong bộ nhớ không bị thay đổi.", default="no"):
             return
         self.task("Đang chuyển map vào thùng rác…", lambda: remote(settings, "map-delete", "--name", record["name"],

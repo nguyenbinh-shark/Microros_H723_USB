@@ -37,12 +37,21 @@ giải nén và cú pháp helper; không liên lạc robot hay khởi chạy ROS
 
 ## Giao diện
 
+Chọn **Tiếng Việt / English** trên thanh đầu để đổi ngôn ngữ ngay khi đang mở.
+Lựa chọn được lưu riêng cho mỗi app và dùng lại lần sau; cấu hình cũ mặc định
+tiếng Việt. Nút, tiêu đề, trạng thái, bảng chẩn đoán và hộp thoại đổi theo ngôn ngữ.
+Tên thiết bị, tên map, đường dẫn, lệnh và thông tin tác giả được giữ nguyên.
+Nhật ký thao tác mới dùng ngôn ngữ hiện tại, các dòng cũ giữ nội dung đã ghi.
+Đổi ngôn ngữ không nối lại SSH/ROS hay gửi lệnh robot. Danh mục dịch dùng chung
+với DAPLink Flasher tại `ui_translations.py`, lớp hiển thị tại `ui_language.py`.
+
 Giao diện desktop giữ nền giấy xám, chữ đen và điểm nhấn xanh dương lấy cảm hứng
 từ [ArtCraft](https://getartcraft.com/), đồng thời ưu tiên thông tin vận hành:
 tiêu đề gọn, thao tác trực tiếp và trạng thái robot luôn hiển thị ở đầu màn hình.
-Logo cá mập, tên Trần Nguyên Bình và thông tin trong **Giới thiệu** lấy từ
-website của chủ dự án tại `P:\web\website-source`. Logo/icon được đóng gói trong
-`assets/`, thông tin nhận diện ở `branding.py`; chạy app không phụ thuộc website.
+Icon app là robot nhìn từ trên với vòng quét LiDAR, màu đen/xanh của Studio,
+vẽ bằng `tools/make_app_icons.py` và đóng gói trong `assets/`. Tên Trần Nguyên
+Bình và thông tin trong **Giới thiệu** lấy từ website của chủ dự án tại
+`P:\web\website-source`, lưu ở `branding.py`; chạy app không phụ thuộc website.
 
 Tiêu đề và nội dung dùng Segoe UI, số đo và nhật ký dùng Consolas.
 Đã kiểm tra các font đang vẽ tiếng Việt có đủ ký tự Việt trên Windows; không

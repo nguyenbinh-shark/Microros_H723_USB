@@ -13,7 +13,7 @@ runtime_files = [
 ]
 datas = [(str(root / name), '.') for name in runtime_files]
 datas += [(str(root / 'assets' / name), 'assets')
-          for name in ('shark-logo.png', 'shark.ico')]
+          for name in ('rpbot-studio.png', 'rpbot-studio.ico')]
 
 version = VSVersionInfo(
     ffi=FixedFileInfo(filevers=(0, 1, 0, 0), prodvers=(0, 1, 0, 0),
@@ -40,5 +40,5 @@ exe = EXE(
     pyz, a.scripts, a.binaries, a.datas, [],
     name='RPBotStudio', console=False, debug=False,
     bootloader_ignore_signals=False, strip=False, upx=False,
-    icon=str(root / 'assets' / 'shark.ico'), version=version,
+    icon=str(root / 'assets' / 'rpbot-studio.ico'), version=version,
 )

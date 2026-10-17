@@ -107,6 +107,7 @@ class RobotTaskTests(unittest.TestCase):
 
     def test_cancel_confirmation_never_sends_stop(self):
         app = console.Console.__new__(console.Console)
+        app.dialogs = console.Dialogs(console.Language(), console.messagebox)
         app.append, app.control_task = Mock(), Mock()
         task = dict(pid=100, start_ticks='10000', mode='mapping', kind='launch', label='Mapping')
         with patch.object(console.messagebox, 'askyesno', return_value=False):

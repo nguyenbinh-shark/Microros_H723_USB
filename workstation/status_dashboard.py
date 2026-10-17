@@ -16,7 +16,7 @@ COLORS = {
 
 
 class StatusCard(tk.Frame):
-    def __init__(self, parent, title):
+    def __init__(self, parent, title, language):
         super().__init__(parent, background=theme.PANEL, highlightthickness=2, highlightbackground=theme.LINE,
                          padx=9, pady=6)
         self.header = tk.Frame(self, background=theme.PANEL)
@@ -32,12 +32,13 @@ class StatusCard(tk.Frame):
                                font=('Segoe UI', 9), anchor='w', justify='left', height=1)
         self.detail.pack(fill='x')
         self.last = None
+        self.language = language
         self.bind('<Configure>', lambda event: self.fit_detail())
 
     def fit_detail(self):
         if self.last is None:
             return
-        text = self.last.detail
+        text = self.language.text(self.last.detail)
         font = tkfont.Font(root=self, font=self.detail.cget('font'))
         width = max(80, self.winfo_width()-24)
         if font.measure(text) > width:
@@ -76,7 +77,7 @@ class StatusDashboard(ttk.Frame):
         for col, (key, title) in enumerate((('connection', 'KẾT NỐI'), ('mapping', 'CHẾ ĐỘ'),
                                            ('navigation', 'NAV2'), ('motion', 'MOTOR'))):
             row.columnconfigure(col, weight=1, uniform='cards')
-            card = StatusCard(row, title)
+            card = StatusCard(row, title, app.i18n)
             card.grid(row=0, column=col, sticky='nsew', padx=(0 if col == 0 else 7, 0))
             self.cards[key] = card
         lower = ttk.Frame(self)

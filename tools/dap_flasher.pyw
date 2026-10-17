@@ -21,9 +21,10 @@ The same engine on the console:
 
 Standalone DAPLinkFlasher.exe (no Python, no STM32CubeIDE needed on the target PC): pack this
 file with ST's OpenOCD from STM32CubeIDE (its tools\\bin folder and st_scripts) using PyInstaller:
-    py -m PyInstaller --onefile --windowed --name DAPLinkFlasher --icon dap_flasher.ico
+    py -m PyInstaller --onefile --windowed --name DAPLinkFlasher --icon tools/assets/dap-flasher.ico
        --add-data "<openocd tools\\bin>;openocd/bin" --add-data "<st_scripts>;openocd/scripts"
-       --add-data "dap_flasher.ico;." tools/dap_flasher.pyw
+       --add-data "tools/assets;assets" tools/dap_flasher.pyw
+(tools/DAPLinkFlasher.spec does this; build it with tools/build_dap_flasher.ps1.)
 
 Safety (RPBot): with the motor check on, a running core is only halted after the check
 command reports /motor_status with bit 0x10 (MOTORS_ENABLED) clear. A halted MCU can leave
@@ -114,6 +115,7 @@ class Settings:
     kill_other_openocd: bool = True
     show_openocd_log: bool = False
     theme: str = "auto"
+    language: str = "vi"
 
     @classmethod
     def load(cls) -> "Settings":
@@ -900,19 +902,26 @@ class Flasher:
 
 # --------------------------------------------------------------------------- GUI
 
-# Graphite neutrals tinted toward solder-mask blue-green; ENIG gold is the one accent and marks
-# what is being written. Semantic colours (ok / warn / err / info) are separate from it.
+AUTHOR_INFO = {
+    "name": "Trần Nguyên Bình",
+    "bio": "Cơ điện tử · Hệ thống điều khiển · Robotics",
+    "website": "https://nguyenbinh-shark.github.io",
+    "github": "https://github.com/nguyenbinh-shark",
+    "email": "trannguyenbinh.shark@gmail.com",
+}
+
+# Paper, ink and blue match RPBot Studio. State colours remain separate from actions.
 THEMES = {
-    "light": {"bg": "#EEF2F3", "surface": "#FFFFFF", "sunken": "#E2E8EA", "field": "#F8FAFA",
-              "line": "#CDD6DA", "fg": "#18222A", "muted": "#5B6971", "accent": "#DDA93F",
-              "accent_hover": "#E6B85A", "accent_ink": "#18222A", "accent_text": "#8C5E0C",
-              "ok": "#2E8B55", "match": "#8CC9A3", "warn": "#C46C1C", "err": "#C63B3B",
-              "err_ink": "#FFFFFF", "info": "#3B7DCF"},
-    "dark": {"bg": "#10161A", "surface": "#172025", "sunken": "#0B1013", "field": "#0F161A",
-             "line": "#29353C", "fg": "#E2E9EC", "muted": "#8996A0", "accent": "#E2AE48",
-             "accent_hover": "#EBC067", "accent_ink": "#10161A", "accent_text": "#E8BC63",
-             "ok": "#4DB673", "match": "#2E6A47", "warn": "#E6924A", "err": "#E05A5A",
-             "err_ink": "#FFFFFF", "info": "#5A99E4"},
+    "light": {"bg": "#F2F1EE", "surface": "#FAF9F7", "sunken": "#E9E8E4", "field": "#FFFFFF",
+              "line": "#D4D3CF", "fg": "#101014", "muted": "#4B5563", "accent": "#1659C4",
+              "accent_hover": "#1249A3", "accent_ink": "#FFFFFF", "accent_text": "#1659C4",
+              "ok": "#166534", "match": "#48845D", "warn": "#92400E", "err": "#B91C1C",
+              "err_ink": "#FFFFFF", "info": "#1D4ED8"},
+    "dark": {"bg": "#14161B", "surface": "#1D222B", "sunken": "#101217", "field": "#11151C",
+             "line": "#414B5A", "fg": "#F8FAFC", "muted": "#B4BECD", "accent": "#8AB6FF",
+             "accent_hover": "#B3D0FF", "accent_ink": "#101827", "accent_text": "#A9C9FF",
+             "ok": "#86EFAC", "match": "#4C9765", "warn": "#FBBF24", "err": "#FCA5A5",
+             "err_ink": "#3F0808", "info": "#93C5FD"},
 }
 STATE_COLOR = {"checking": "info", "erasing": "warn", "writing": "accent", "verifying": "info",
                "done": "ok", "match": "match", "dirty": "err"}
@@ -935,10 +944,16 @@ def _windows_dark_mode() -> bool:
         return False
 
 
-def run_gui(settings: Settings) -> None:
+def run_gui(settings: Settings, *, on_ready=None) -> None:
     import tkinter as tk
     import tkinter.font as tkfont
+    import webbrowser
     from tkinter import filedialog, messagebox, ttk
+    if not getattr(sys, "frozen", False):
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "workstation"))
+    from ui_language import Dialogs, Language, LANGUAGES, picker
+    language = Language(settings.language)
+    filedialog, messagebox = Dialogs(language, filedialog), Dialogs(language, messagebox)
 
     try:
         import ctypes
@@ -954,15 +969,13 @@ def run_gui(settings: Settings) -> None:
     def pick(*names: str) -> str:
         return next((n for n in names if n in families), names[-1])
 
-    display = pick("Bahnschrift SemiBold", "Bahnschrift", "Segoe UI Semibold")
-    numeric = pick("Bahnschrift", "Segoe UI")
-    body = pick("Segoe UI Variable Text", "Segoe UI")
-    body_b = pick("Segoe UI Variable Text Semibold", "Segoe UI Semibold", "Segoe UI")
-    mono = pick("Cascadia Mono", "Consolas", "Courier New")
-    F = {"title": (display, 17), "step": (display, 12), "badge": (display, 10), "eyebrow": (display, 9),
-         "big": (display, 36), "kb": (numeric, 15), "body": (body, 10), "body_b": (body_b, 10),
-         "small": (body, 9), "mono": (mono, 9), "mono_s": (mono, 8), "button": (display, 13),
-         "button_s": (body_b, 9)}
+    body = pick("Segoe UI", "Arial")
+    mono = pick("Consolas", "Courier New")
+    F = {"title": (body, 17, "bold"), "step": (body, 11, "bold"), "badge": (body, 9, "bold"),
+         "eyebrow": (body, 9, "bold"), "big": (body, 34, "bold"), "kb": (body, 12, "bold"),
+         "body": (body, 10), "body_b": (body, 10, "bold"), "small": (body, 9),
+         "mono": (mono, 10), "mono_s": (mono, 9), "button": (body, 12, "bold"),
+         "button_s": (body, 9, "bold")}
     S = T["surface"]
 
     style = ttk.Style(root)
@@ -1000,10 +1013,10 @@ def run_gui(settings: Settings) -> None:
         return img
 
     root.check_images = (box_image(False), box_image(True))   # Tk keeps no reference of its own
-    style.element_create("Gold.Checkbutton.indicator", "image", root.check_images[0],
+    style.element_create("Studio.Checkbutton.indicator", "image", root.check_images[0],
                          ("selected", root.check_images[1]), width=26, sticky="w")
     style.layout("TCheckbutton", [("Checkbutton.padding", {"sticky": "nswe", "children": [
-        ("Gold.Checkbutton.indicator", {"side": "left", "sticky": ""}),
+        ("Studio.Checkbutton.indicator", {"side": "left", "sticky": ""}),
         ("Checkbutton.focus", {"side": "left", "sticky": "w", "children": [
             ("Checkbutton.label", {"sticky": "nswe"})]})]})])
     style.configure("Bg.TCheckbutton", background=T["bg"], focuscolor=T["bg"])
@@ -1065,8 +1078,44 @@ def run_gui(settings: Settings) -> None:
                 self.command()
             return "break"
 
+    class StatusTile(tk.Frame):
+        def __init__(self, parent, title):
+            super().__init__(parent, bg=S, highlightthickness=2, highlightbackground=T["line"], padx=12, pady=9)
+            self.heading = tk.Label(self, text=title, font=F["eyebrow"], anchor="w")
+            self.heading.pack(fill="x")
+            self.value = tk.Label(self, font=(body, 12, "bold"), anchor="w", height=1)
+            self.value.pack(fill="x", pady=(5, 3))
+            self.detail = tk.Label(self, font=F["small"], anchor="nw", justify="left", height=2)
+            self.detail.pack(fill="x")
+            self.full_value = ""
+            self.bind("<Configure>", self._fit)
+            self.show("muted", "CHƯA CÓ", "")
+
+        def show(self, level, value, detail=None):
+            self.level, self.full_value = level, value
+            color = T[level]
+            bg = _mix(color, S, 0.92 if theme == "light" else 0.86)
+            self.configure(bg=bg, highlightbackground=color)
+            for label in (self.heading, self.value, self.detail):
+                label.configure(bg=bg, fg=color if label is self.value else T["fg"])
+            if detail is not None:
+                self.detail.configure(text=detail)
+            self._fit()
+
+        def _fit(self, event=None):
+            width = max(130, self.winfo_width() - 28)
+            text = language.text(self.full_value)
+            font = tkfont.Font(root=root, font=self.value.cget("font"))
+            if font.measure(text) > width:
+                while text and font.measure(text + "…") > width:
+                    text = text[:-1]
+                text = text.rstrip() + "…"
+            self.value.configure(text=text)
+            self.detail.configure(wraplength=width)
+
     class App:
         def __init__(self):
+            self.i18n = language
             self.events: queue.Queue = queue.Queue()
             self.flasher = Flasher(self._emit, self._ask)
             self.worker: threading.Thread | None = None
@@ -1080,36 +1129,63 @@ def run_gui(settings: Settings) -> None:
             self.result: bool | None = None
             self.started = 0.0
             self.probes: list[tuple[str, str]] = []
+            self.edit_controls = []
+            self.about_window = None
+            self.author_links = {}
 
-            root.title("DAPLink Flasher")
-            icon = BUNDLE_DIR / "dap_flasher.ico"
+            root.title(f"DAPLink Flasher · {AUTHOR_INFO['name']}")
+            asset_dir = BUNDLE_DIR / "assets"
+            icon = asset_dir / "dap-flasher.ico"
             if icon.is_file():
                 try:
                     root.iconbitmap(default=str(icon))
                 except tk.TclError:
                     pass
             root.configure(bg=T["bg"])
-            root.geometry("1140x820")
-            root.minsize(1000, 760)
+            root.geometry("1280x860")
+            root.minsize(1060, 720)
             self._title_bar()
 
             # header band
-            head = tk.Frame(root, bg=T["sunken"])
+            head = tk.Frame(root, bg=T["bg"])
             head.pack(fill="x")
-            hi = tk.Frame(head, bg=T["sunken"])
-            hi.pack(fill="x", padx=24, pady=(14, 13))
-            tk.Label(hi, text="DAPLink Flasher", font=F["title"], bg=T["sunken"], fg=T["fg"]).pack(side="left")
-            tk.Label(hi, text="STM32H723  ·  CMSIS-DAP không dây  ·  OpenOCD", font=F["small"],
-                     bg=T["sunken"], fg=T["muted"]).pack(side="left", padx=(14, 0), pady=(6, 0))
-            self.pill = tk.Label(hi, font=F["body_b"], padx=12, pady=3)
-            self.pill.pack(side="right")
+            hi = tk.Frame(head, bg=T["bg"])
+            hi.pack(fill="x", padx=22, pady=(15, 12))
+            self.brand_logo = None
+            logo_path = asset_dir / "dap-flasher.png"
+            if logo_path.is_file():
+                self.brand_logo = tk.PhotoImage(file=str(logo_path))
+                tk.Label(hi, image=self.brand_logo, bg=T["bg"]).pack(side="left", padx=(0, 12))
+            title = tk.Frame(hi, bg=T["bg"])
+            title.pack(side="left")
+            tk.Label(title, text="DAPLink Flasher", font=F["title"], bg=T["bg"], fg=T["fg"], anchor="w").pack(fill="x")
+            tk.Label(title, text="STM32H723  /  CMSIS-DAP  /  OpenOCD", font=F["small"],
+                     bg=T["bg"], fg=T["muted"], anchor="w").pack(fill="x", pady=(3, 0))
+            author = tk.Frame(hi, bg=T["bg"])
+            author.pack(side="right")
+            tk.Label(author, text=AUTHOR_INFO["name"].upper(), font=F["small"],
+                     bg=T["bg"], fg=T["muted"], anchor="e").pack(fill="x")
+            self.btn_about = Btn(author, "Thông tin tác giả", self._about)
+            self.btn_about.pack(anchor="e", pady=(5, 0))
+            self.language_picker = picker(hi, language, self._change_language, background=T["bg"])
+            self.language_picker.pack(side="right", padx=(0, 18))
+            tk.Frame(head, bg=T["line"], height=1).pack(fill="x")
+            summary = tk.Frame(root, bg=T["bg"])
+            summary.pack(fill="x", padx=22, pady=(14, 0))
+            self.cards = {}
+            for column, (key, label) in enumerate((("link", "KẾT NỐI MẠCH NẠP"),
+                                                   ("image", "FIRMWARE ĐÃ CHỌN"), ("safety", "KIỂM TRA ĐỘNG CƠ"))):
+                summary.columnconfigure(column, weight=1, uniform="status")
+                tile = StatusTile(summary, label)
+                tile.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 8, 0))
+                self.cards[key] = tile
 
             main = tk.Frame(root, bg=T["bg"])
-            main.pack(fill="both", expand=True, padx=24, pady=(20, 22))
+            main.pack(fill="both", expand=True, padx=22, pady=(16, 20))
             main.columnconfigure(1, weight=1)
             main.rowconfigure(0, weight=1)
-            left = tk.Frame(main, bg=T["bg"], width=410)
-            left.grid(row=0, column=0, sticky="ns", padx=(0, 24))
+            left = tk.Frame(main, bg=T["bg"], width=380)
+            left.grid(row=0, column=0, sticky="ns", padx=(0, 18))
             left.pack_propagate(False)
             right = tk.Frame(main, bg=T["bg"])
             right.grid(row=0, column=1, sticky="nsew")
@@ -1121,7 +1197,9 @@ def run_gui(settings: Settings) -> None:
             self._refresh_probes()
             self._image_info()
             self._link_view("off", "")
+            self._safety_view()
             self._readout_idle()
+            language.attach(root)
             self._startup_log()
             root.protocol("WM_DELETE_WINDOW", self._close)
             root.after(50, self._poll)
@@ -1129,6 +1207,18 @@ def run_gui(settings: Settings) -> None:
             root.after(3000, self._idle_ping)
 
         # ---- layout
+
+        def _change_language(self, code) -> None:
+            language.select(code)
+            self.language_picker.variable.set(LANGUAGES[language.code])
+            for card in self.cards.values():
+                card._fit()
+            labels = [label for label, serial in self.probes]
+            auto = language.text("Tự động (mạch nạp đầu tiên)")
+            self.cmb_probe.configure(values=labels + [auto])
+            if self.var_probe.get() not in labels:
+                self.var_probe.set(auto)
+            self._settings().save()
 
         def _startup_log(self) -> None:
             try:
@@ -1145,28 +1235,97 @@ def run_gui(settings: Settings) -> None:
                 self._append(f"Thấy {len(self.probes)} mạch nạp CMSIS-DAP: {names}", "info")
             self._append("Bấm Kết nối để kiểm tra đường truyền, hoặc bấm Nạp firmware luôn.", "info")
 
-        def _title_bar(self) -> None:
+        def _title_bar(self, window=None) -> None:
             if theme != "dark":
                 return
             try:
                 import ctypes
-                root.update_idletasks()
-                hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+                window = root if window is None else window
+                window.update_idletasks()
+                hwnd = ctypes.windll.user32.GetParent(window.winfo_id())
                 on = ctypes.c_int(1)
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(on), ctypes.sizeof(on))
             except (ImportError, AttributeError, OSError):
                 pass
 
+        def _about(self) -> None:
+            if self.about_window is not None and self.about_window.winfo_exists():
+                self.about_window.lift()
+                self.about_window.focus_set()
+                return
+            window = self.about_window = tk.Toplevel(root)
+            window.withdraw()
+            window.title("Thông tin tác giả · DAPLink Flasher")
+            window.configure(bg=S)
+            window.transient(root)
+            window.resizable(False, False)
+            content = tk.Frame(window, bg=S, padx=24, pady=22)
+            content.pack(fill="both", expand=True)
+            header = tk.Frame(content, bg=S)
+            header.pack(fill="x")
+            if self.brand_logo is not None:
+                tk.Label(header, image=self.brand_logo, bg=S).pack(side="left", padx=(0, 14))
+            identity = tk.Frame(header, bg=S)
+            identity.pack(side="left")
+            tk.Label(identity, text="TÁC GIẢ", font=F["eyebrow"], bg=S, fg=T["accent_text"],
+                     anchor="w").pack(fill="x")
+            tk.Label(identity, text=AUTHOR_INFO["name"], font=F["title"], bg=S, fg=T["fg"],
+                     anchor="w").pack(fill="x", pady=(3, 0))
+            tk.Label(content, text=AUTHOR_INFO["bio"], font=F["body"], bg=S, fg=T["muted"],
+                     anchor="w", justify="left", wraplength=470).pack(fill="x", pady=(14, 18))
+            tk.Frame(content, bg=T["line"], height=1).pack(fill="x")
+            contacts = tk.Frame(content, bg=S)
+            contacts.pack(fill="x", pady=(14, 18))
+            self.author_links = {}
+            for row, (key, label) in enumerate((("website", "Website"), ("github", "GitHub"), ("email", "Email"))):
+                value = AUTHOR_INFO[key]
+                url = "mailto:" + value if key == "email" else value
+                tk.Label(contacts, text=label, font=F["body_b"], bg=S, fg=T["fg"],
+                         anchor="w").grid(row=row, column=0, sticky="w", padx=(0, 20), pady=9)
+                link = Btn(contacts, value, lambda target=url: self._open_author_link(target), "link")
+                link.grid(row=row, column=1, sticky="w", pady=9)
+                self.author_links[key] = link
+            tk.Frame(content, bg=T["line"], height=1).pack(fill="x")
+            tk.Label(content, text="DAPLink Flasher\nSTM32H723  /  CMSIS-DAP  /  OpenOCD", font=F["small"],
+                     bg=S, fg=T["muted"], justify="left", anchor="w").pack(fill="x", pady=(14, 16))
+            self.btn_close_about = Btn(content, "Đóng", self._close_about, "secondary")
+            self.btn_close_about.pack(anchor="e")
+            window.protocol("WM_DELETE_WINDOW", self._close_about)
+            window.bind("<Escape>", lambda event: self._close_about())
+            language.attach(window)
+            window.update_idletasks()
+            x = root.winfo_rootx() + max(0, (root.winfo_width() - window.winfo_reqwidth()) // 2)
+            y = root.winfo_rooty() + max(0, (root.winfo_height() - window.winfo_reqheight()) // 2)
+            window.geometry(f"+{x}+{y}")
+            window.deiconify()
+            self._title_bar(window)
+            window.focus_set()
+
+        def _close_about(self) -> None:
+            if self.about_window is not None:
+                self.about_window.destroy()
+                self.about_window = None
+                self.author_links = {}
+
+        def _open_author_link(self, url: str) -> None:
+            try:
+                if webbrowser.open(url):
+                    return
+            except (OSError, webbrowser.Error):
+                pass
+            messagebox.showerror("Không mở được liên kết", f"Bạn có thể sao chép địa chỉ này:\n{url}",
+                                 parent=self.about_window or root)
+
         def _step(self, parent, n: int, title: str):
             card = tk.Frame(parent, bg=S, highlightthickness=1, highlightbackground=T["line"])
             card.pack(fill="x", pady=(0, 10))
             head = tk.Frame(card, bg=S)
-            head.pack(fill="x", padx=16, pady=(11, 7))
+            head.pack(fill="x", padx=12, pady=(8, 6))
             badge = tk.Label(head, text=str(n), font=F["badge"], width=2, bg=T["sunken"], fg=T["muted"])
             badge.pack(side="left")
             tk.Label(head, text=title, font=F["step"], bg=S, fg=T["fg"]).pack(side="left", padx=(10, 0))
             inner = tk.Frame(card, bg=S)
-            inner.pack(fill="x", padx=16, pady=(0, 12))
+            inner.pack(fill="x", padx=12, pady=(0, 8))
             return inner, badge, head
 
         def _build_steps(self, left) -> None:
@@ -1176,125 +1335,158 @@ def run_gui(settings: Settings) -> None:
             self.lbl_hint.pack(side="bottom", fill="x", pady=(8, 0))
             self.btn_flash = Btn(left, "Nạp firmware", self._flash_or_stop, "primary")
             self.btn_flash.pack(side="bottom", fill="x")
+            panel = tk.Frame(left, bg=T["bg"])
+            panel.pack(fill="both", expand=True, pady=(0, 10))
+            self.settings_canvas = tk.Canvas(panel, width=360, bg=T["bg"], highlightthickness=0)
+            scrollbar = ttk.Scrollbar(panel, command=self.settings_canvas.yview)
+            scrollbar.pack(side="right", fill="y")
+            self.settings_canvas.pack(side="left", fill="both", expand=True)
+            self.settings_canvas.configure(yscrollcommand=scrollbar.set)
+            steps = tk.Frame(self.settings_canvas, bg=T["bg"])
+            window = self.settings_canvas.create_window(0, 0, window=steps, anchor="nw")
+            steps.bind("<Configure>", lambda e: self.settings_canvas.configure(scrollregion=self.settings_canvas.bbox("all")))
+            self.settings_canvas.bind("<Configure>", lambda e: self.settings_canvas.itemconfigure(window, width=e.width))
+            def wheel(event):
+                widget = root.winfo_containing(event.x_root, event.y_root)
+                if widget is not None and str(widget).startswith(str(steps)):
+                    if widget.winfo_class() not in ("TCombobox", "TSpinbox"):
+                        self.settings_canvas.yview_scroll(-int(event.delta / 120), "units")
+                        return "break"
+            root.bind("<MouseWheel>", wheel, add="+")
 
             # 1. probe
-            box, self.badge1, head1 = self._step(left, 1, "Kết nối mạch nạp")
-            self.btn_reset = Btn(head1, "Reset STM32", lambda: self._start("reset_run"), "ghost")
-            self.btn_reset.pack(side="right")
+            box, self.badge1, head1 = self._step(steps, 1, "Kết nối mạch nạp")
             row = tk.Frame(box, bg=S)
             row.pack(fill="x")
             self.var_probe = tk.StringVar()
             self.cmb_probe = ttk.Combobox(row, textvariable=self.var_probe, state="readonly")
             self.cmb_probe.pack(side="left", fill="x", expand=True)
-            Btn(row, "↻", self._refresh_probes, "ghost").pack(side="left", padx=(6, 0))
+            self.btn_refresh = Btn(row, "Quét lại", self._refresh_probes, "ghost")
+            self.btn_refresh.pack(side="left", padx=(6, 0))
+            row = tk.Frame(box, bg=S)
+            row.pack(fill="x", pady=(9, 0))
             self.btn_connect = Btn(row, "Kết nối", self._toggle_connect, "secondary")
-            self.btn_connect.pack(side="left", padx=(6, 0))
-            self.lbl_link = tk.Label(box, text="", font=F["small"], bg=S, fg=T["muted"], anchor="w",
-                                     justify="left", wraplength=360)
-            self.lbl_link.pack(fill="x", pady=(8, 0))
+            self.btn_connect.pack(side="left", fill="x", expand=True)
+            self.btn_reset = Btn(row, "Reset STM32", lambda: self._start("reset_run"), "ghost")
+            self.btn_reset.pack(side="left", padx=(6, 0))
+            self.lbl_link = self.cards["link"].detail
 
             # 2. firmware
-            box, self.badge2, _ = self._step(left, 2, "Chọn firmware")
+            box, self.badge2, _ = self._step(steps, 2, "Chọn firmware")
             row = tk.Frame(box, bg=S)
             row.pack(fill="x")
             self.var_image = tk.StringVar(value=settings.image)
-            ttk.Entry(row, textvariable=self.var_image).pack(side="left", fill="x", expand=True)
-            Btn(row, "Chọn file…", self._browse, "secondary").pack(side="left", padx=(6, 0))
-            self.lbl_image = tk.Label(box, text="", font=F["small"], bg=S, fg=T["muted"], anchor="w",
-                                      justify="left", wraplength=360)
-            self.lbl_image.pack(fill="x", pady=(8, 0))
+            entry = ttk.Entry(row, textvariable=self.var_image, width=18)
+            entry.pack(side="left", fill="x", expand=True)
+            self.edit_controls.append((entry, "normal"))
+            self.btn_browse = Btn(row, "Chọn file…", self._browse, "ghost")
+            self.btn_browse.pack(side="left", padx=(6, 0))
+            self.lbl_image = self.cards["image"].detail
 
             # 3. parameters
-            box, self.badge3, _ = self._step(left, 3, "Thông số nạp")
+            box, self.badge3, _ = self._step(steps, 3, "Thông số nạp")
             self.var_backend = tk.StringVar(value=settings.backend)
             self.var_speed = tk.StringVar(value=str(settings.speed_khz))
             self.var_minutes = tk.StringVar(value=str(settings.max_minutes))
-            rows = ((("Giao tiếp", ttk.Combobox, dict(textvariable=self.var_backend, width=8, state="readonly",
-                                                   values=["hid", "usb_bulk", "auto"]), ""),
-                     ("SWD", ttk.Combobox, dict(textvariable=self.var_speed, width=5,
-                                                    values=["200", "400", "1000", "1800", "4000"]), "kHz")),
-                    (("Thử tối đa", ttk.Spinbox, dict(from_=1, to=240, textvariable=self.var_minutes, width=5),
-                      "phút"),))
-            for cells in rows:
-                line = tk.Frame(box, bg=S)
-                line.pack(fill="x", pady=3)
-                for n, (label, cls, kw, unit) in enumerate(cells):
-                    tk.Label(line, text=label, font=F["body"], bg=S, fg=T["muted"]).pack(
-                        side="left", padx=(16 if n else 0, 8))
-                    cls(line, **kw).pack(side="left")
-                    if unit:
-                        tk.Label(line, text=unit, font=F["small"], bg=S, fg=T["muted"]).pack(side="left", padx=(5, 0))
+            line = tk.Frame(box, bg=S)
+            line.pack(fill="x", pady=3)
+            fields = (("Giao tiếp", ttk.Combobox, dict(textvariable=self.var_backend, width=8, state="readonly",
+                                                       values=["hid", "usb_bulk", "auto"])),
+                      ("SWD · kHz", ttk.Combobox, dict(textvariable=self.var_speed, width=6,
+                                                       values=["200", "400", "1000", "1800", "4000"])),
+                      ("Tối đa · phút", ttk.Spinbox, dict(from_=1, to=240, textvariable=self.var_minutes, width=6)))
+            for column, (label, cls, kw) in enumerate(fields):
+                line.columnconfigure(column, weight=1, uniform="parameters")
+                cell = tk.Frame(line, bg=S)
+                cell.grid(row=0, column=column, sticky="ew", padx=(0 if column == 0 else 8, 0))
+                tk.Label(cell, text=label, font=F["small"], bg=S, fg=T["muted"], anchor="w").pack(fill="x", pady=(0, 4))
+                control = cls(cell, **kw)
+                control.pack(fill="x")
+                self.edit_controls.append((control, kw.get("state", "normal")))
             self.var_rotate = tk.BooleanVar(value=settings.rotate)
             self.var_force = tk.BooleanVar(value=settings.force)
             self.var_safety = tk.BooleanVar(value=settings.safety)
             self.var_safety_cmd = tk.StringVar(value=settings.safety_cmd)
             opts = tk.Frame(box, bg=S)
             opts.pack(fill="x", pady=(6, 0))
-            ttk.Checkbutton(opts, text="Tự đổi giao tiếp/xung khi không kết nối được",
-                            variable=self.var_rotate).pack(anchor="w")
-            ttk.Checkbutton(opts, text="Ghi lại cả sector đã đúng", variable=self.var_force).pack(anchor="w")
+            for label, variable in (("Tự đổi giao tiếp / xung khi mất link", self.var_rotate),
+                                    ("Ghi lại cả sector đã đúng", self.var_force)):
+                control = ttk.Checkbutton(opts, text=label, variable=variable)
+                control.pack(anchor="w")
+                self.edit_controls.append((control, "normal"))
             srow = tk.Frame(opts, bg=S)
             srow.pack(fill="x")
-            ttk.Checkbutton(srow, text="Chỉ dừng chip khi động cơ đã tắt",
-                            variable=self.var_safety).pack(side="left")
-            self.lnk_cmd = Btn(srow, "sửa lệnh", self._toggle_cmd, "link")
-            self.lnk_cmd.pack(side="left", padx=(8, 0))
+            control = ttk.Checkbutton(srow, text="Kiểm tra động cơ trước khi dừng chip", variable=self.var_safety)
+            control.pack(anchor="w")
+            self.edit_controls.append((control, "normal"))
+            self.var_safety.trace_add("write", lambda *a: self._safety_view())
+            self.lnk_cmd = Btn(opts, "Sửa lệnh kiểm tra động cơ", self._toggle_cmd, "link")
+            self.lnk_cmd.pack(anchor="w", pady=(5, 0))
             self.ent_cmd = ttk.Entry(opts, textvariable=self.var_safety_cmd, font=F["mono_s"])
+            self.edit_controls.append((self.ent_cmd, "normal"))
 
         def _build_progress(self, right) -> None:
-            top = tk.Frame(right, bg=T["bg"])
-            top.pack(fill="x")
-            tk.Label(top, text="BỘ NHỚ FLASH  ·  1 MB  ·  8 × 128 KB", font=F["eyebrow"], bg=T["bg"],
-                     fg=T["muted"]).pack(side="left")
-            legend = tk.Frame(top, bg=T["bg"])
-            legend.pack(side="right")
-            for key, text in (("match", "đã đúng"), ("ok", "vừa ghi"), ("accent", "đang ghi"), ("err", "ghi lại")):
-                sw = tk.Canvas(legend, width=10, height=10, bg=T["bg"], highlightthickness=0)
-                sw.create_rectangle(0, 0, 10, 10, fill=T[key], width=0)
-                sw.pack(side="left", padx=(12, 5))
-                tk.Label(legend, text=text, font=F["small"], bg=T["bg"], fg=T["muted"]).pack(side="left")
-            self.map = tk.Canvas(right, height=124, bg=T["bg"], highlightthickness=0)
-            self.map.pack(fill="x", pady=(10, 14))
+            self.progress_split = tk.PanedWindow(right, orient="vertical", bg=T["line"],
+                                                sashwidth=9, sashrelief="flat", borderwidth=0)
+            self.progress_split.pack(fill="both", expand=True)
+            overview = tk.Frame(self.progress_split, bg=T["bg"])
+            log_panel = tk.Frame(self.progress_split, bg=T["bg"])
+            self.progress_split.add(overview, minsize=260, stretch="never")
+            self.progress_split.add(log_panel, minsize=140, stretch="always")
+            def position_sash():
+                height = self.progress_split.winfo_height()
+                self.progress_split.sash_place(0, 0, max(260, min(height - 149, int(height * 0.55))))
+            root.after(120, position_sash)
+
+            ro = tk.Frame(overview, bg=S, highlightthickness=1, highlightbackground=T["line"], padx=12, pady=6)
+            ro.pack(fill="x")
+            self.lbl_pct = tk.Label(ro, text="0%", font=F["big"], bg=S, fg=T["fg"], width=4, anchor="w")
+            self.lbl_pct.pack(side="left")
+            side = tk.Frame(ro, bg=S)
+            side.pack(side="right")
+            self.lbl_kb = tk.Label(side, text="", font=F["kb"], bg=S, fg=T["fg"], anchor="e")
+            self.lbl_kb.pack(anchor="e")
+            self.lbl_rate = tk.Label(side, text="", font=F["small"], bg=S, fg=T["muted"], anchor="e", justify="right", wraplength=190)
+            self.lbl_rate.pack(anchor="e")
+            mid = tk.Frame(ro, bg=S)
+            mid.pack(side="left", fill="x", expand=True, padx=(8, 12))
+            self.lbl_now = tk.Label(mid, text="", font=F["body_b"], bg=S, fg=T["fg"], anchor="w", justify="left", wraplength=280)
+            self.lbl_now.pack(fill="x")
+            self.lbl_detail = tk.Label(mid, text="", font=F["small"], bg=S, fg=T["muted"], anchor="w", justify="left", wraplength=280)
+            self.lbl_detail.pack(fill="x")
+            mid.bind("<Configure>", lambda e: [label.configure(wraplength=max(120, e.width))
+                                              for label in (self.lbl_now, self.lbl_detail)])
+            self.bar = tk.Canvas(overview, height=10, bg=T["sunken"], highlightthickness=0)
+            self.bar.pack(fill="x", pady=(6, 4))
+            self.bar.bind("<Configure>", lambda e: self._draw_bar())
+            self.lbl_stats = tk.Label(overview, text="", font=F["small"], bg=T["bg"], fg=T["muted"], anchor="nw", justify="left", height=1)
+            self.lbl_stats.pack(fill="x")
+            self.lbl_stats.bind("<Configure>", lambda e: self.lbl_stats.configure(wraplength=max(200, e.width)))
+
+            tk.Label(overview, text="BỘ NHỚ FLASH  /  1 MB  /  8 × 128 KB", font=F["eyebrow"], bg=T["bg"],
+                     fg=T["fg"]).pack(anchor="w")
+            self.map = tk.Canvas(overview, height=94, bg=T["bg"], highlightthickness=0)
+            self.map.pack(fill="x")
             self.map.bind("<Configure>", lambda e: self._draw_map())
 
-            ro = tk.Frame(right, bg=T["bg"])
-            ro.pack(fill="x")
-            self.lbl_pct = tk.Label(ro, text="0%", font=F["big"], bg=T["bg"], fg=T["muted"], width=4, anchor="w")
-            self.lbl_pct.pack(side="left")
-            side = tk.Frame(ro, bg=T["bg"])
-            side.pack(side="right")
-            self.lbl_kb = tk.Label(side, text="", font=F["kb"], bg=T["bg"], fg=T["fg"], anchor="e")
-            self.lbl_kb.pack(anchor="e")
-            self.lbl_rate = tk.Label(side, text="", font=F["small"], bg=T["bg"], fg=T["muted"], anchor="e")
-            self.lbl_rate.pack(anchor="e")
-            mid = tk.Frame(ro, bg=T["bg"])
-            mid.pack(side="left", fill="x", expand=True, padx=(8, 12))
-            self.lbl_now = tk.Label(mid, text="", font=F["body_b"], bg=T["bg"], fg=T["fg"], anchor="w")
-            self.lbl_now.pack(fill="x")
-            self.lbl_detail = tk.Label(mid, text="", font=F["small"], bg=T["bg"], fg=T["muted"], anchor="w")
-            self.lbl_detail.pack(fill="x")
-            self.bar = tk.Canvas(right, height=6, bg=T["sunken"], highlightthickness=0)
-            self.bar.pack(fill="x", pady=(12, 6))
-            self.bar.bind("<Configure>", lambda e: self._draw_bar())
-            self.lbl_stats = tk.Label(right, text="", font=F["small"], bg=T["bg"], fg=T["muted"], anchor="w")
-            self.lbl_stats.pack(fill="x")
-
-            logbar = tk.Frame(right, bg=T["bg"])
-            logbar.pack(fill="x", pady=(18, 6))
-            tk.Label(logbar, text="NHẬT KÝ", font=F["eyebrow"], bg=T["bg"], fg=T["muted"]).pack(side="left")
+            logbar = tk.Frame(log_panel, bg=T["bg"])
+            logbar.pack(fill="x", pady=(8, 6))
+            tk.Label(logbar, text="NHẬT KÝ THAO TÁC", font=F["eyebrow"], bg=T["bg"], fg=T["fg"]).pack(side="left")
+            tk.Label(logbar, text="↕ Kéo thanh phía trên để chỉnh", font=F["small"],
+                     bg=T["bg"], fg=T["muted"]).pack(side="left", padx=(14, 0))
             self.var_ocdlog = tk.BooleanVar(value=settings.show_openocd_log)
             ttk.Checkbutton(logbar, text="kèm log OpenOCD", variable=self.var_ocdlog,
                             style="Bg.TCheckbutton").pack(side="right")
-            card = tk.Frame(right, bg=S, highlightthickness=1, highlightbackground=T["line"])
+            card = tk.Frame(log_panel, bg=S, highlightthickness=1, highlightbackground=T["line"])
             card.pack(fill="both", expand=True)
             self.txt = tk.Text(card, wrap="word", font=F["mono"], state="disabled", bg=S, fg=T["fg"],
                                relief="flat", borderwidth=0, padx=12, pady=10, insertbackground=T["fg"],
-                               selectbackground=T["accent"], selectforeground=T["accent_ink"], spacing1=2)
+                               selectbackground=T["accent"], selectforeground=T["accent_ink"], spacing1=2, height=6)
             sb = ttk.Scrollbar(card, command=self.txt.yview)
             self.txt.configure(yscrollcommand=sb.set)
             sb.pack(side="right", fill="y")
             self.txt.pack(side="left", fill="both", expand=True)
-            self.txt.tag_configure("time", foreground=_mix(T["muted"], S, 0.25))
+            self.txt.tag_configure("time", foreground=T["muted"])
             for tag in ("ok", "warn", "err"):
                 self.txt.tag_configure(tag, foreground=T[tag])
             self.txt.tag_configure("ocd", foreground=T["muted"])
@@ -1319,6 +1511,7 @@ def run_gui(settings: Settings) -> None:
             s.safety = self.var_safety.get()
             s.safety_cmd = self.var_safety_cmd.get().strip()
             s.show_openocd_log = self.var_ocdlog.get()
+            s.language = language.code
             return s
 
         def _probe_serial(self) -> str:
@@ -1328,7 +1521,7 @@ def run_gui(settings: Settings) -> None:
         def _refresh_probes(self) -> None:
             self.probes = list_probes()
             labels = [lab for lab, _ in self.probes]
-            auto = "Tự động (mạch nạp đầu tiên)"
+            auto = language.text("Tự động (mạch nạp đầu tiên)")
             self.cmb_probe.configure(values=labels + [auto])
             want = settings.probe_serial
             chosen = next((lab for lab, sn in self.probes if sn == want), labels[0] if labels else auto)
@@ -1373,8 +1566,19 @@ def run_gui(settings: Settings) -> None:
                     self.sector_view = {}
                     self._readout_idle()
             self._badge(self.badge2, self.image_ok, 2)
+            name = Path(self.var_image.get().strip()).name
+            self.cards["image"].show("ok" if self.image_ok else "err" if name else "muted",
+                                     name if self.image_ok else "FILE KHÔNG HỢP LỆ" if name else "CHƯA CHỌN FIRMWARE",
+                                     language.source(self.lbl_image))
             self._draw_map()
             self._update_controls()
+
+        def _safety_view(self) -> None:
+            enabled = self.var_safety.get()
+            self.cards["safety"].show("info" if enabled else "warn",
+                                      "YÊU CẦU KIỂM TRA" if enabled else "ĐÃ TẮT KIỂM TRA",
+                                      "App kiểm tra động cơ trước khi dừng chip; chưa xác nhận trạng thái động cơ."
+                                      if enabled else "Tùy chọn kiểm tra /motor_status đang tắt trong cấu hình.")
 
         def _toggle_cmd(self) -> None:
             if self.ent_cmd.winfo_ismapped():
@@ -1442,6 +1646,11 @@ def run_gui(settings: Settings) -> None:
             else:
                 self.btn_connect.set(text="Ngắt" if self.link_state == "up" else "Kết nối", enabled=not busy)
             self.btn_reset.set(enabled=not busy and self.link_state == "up")
+            self.btn_refresh.set(enabled=not busy)
+            self.btn_browse.set(enabled=not busy)
+            self.lnk_cmd.set(enabled=not busy)
+            for widget, idle_state in self.edit_controls:
+                widget.configure(state="disabled" if busy else idle_state)
             self.cmb_probe.configure(state="disabled" if busy else "readonly")
             if busy:
                 hint = {"flash": "Mất link thì app tự kết nối lại và nạp tiếp chỗ dở.",
@@ -1464,6 +1673,8 @@ def run_gui(settings: Settings) -> None:
             elif self.flasher.ocd is not None:
                 self.flasher.ocd.close()
             self._settings().save()
+            for callback in root.tk.call("after", "info"):
+                root.after_cancel(callback)
             root.destroy()
 
         def _idle_ping(self) -> None:
@@ -1505,6 +1716,8 @@ def run_gui(settings: Settings) -> None:
         _rate_text = ""
 
         def _append(self, text: str, tag: str) -> None:
+            if tag != "ocd":
+                text = language.text(text)
             self.txt.configure(state="normal")
             self.txt.insert("end", time.strftime("%H:%M:%S  "), "time")
             self.txt.insert("end", text + "\n", tag)
@@ -1527,8 +1740,7 @@ def run_gui(settings: Settings) -> None:
             self.link_state = state
             pill = {"off": ("muted", "Chưa kết nối"), "connecting": ("info", "Đang kết nối…"),
                     "up": ("ok", "Đã kết nối"), "down": ("warn", "Mất liên kết")}[state]
-            color = T[pill[0]]
-            self.pill.configure(text=f"●  {pill[1]}", fg=color, bg=_mix(color, T["sunken"], 0.82))
+            self.cards["link"].show(pill[0], pill[1].upper())
             if state == "up":
                 chip = chip or self.flasher.chip
                 text = f"{chip}  ·  {detail}" + (f"  ·  IDCODE {idcode:#010x}" if idcode else "")
@@ -1540,13 +1752,14 @@ def run_gui(settings: Settings) -> None:
             elif state == "down":
                 self.lbl_link.configure(text=f"Mất liên kết: {detail[:140]}", fg=T["warn"])
             else:
-                self.lbl_link.configure(text="Chip vẫn chạy khi kết nối, chỉ dừng lúc nạp.", fg=T["muted"])
+                self.lbl_link.configure(text="Chưa mở phiên OpenOCD. Bấm Kết nối để kiểm tra." if self.probes else
+                                        "Chưa thấy CMSIS-DAP trên USB. Cắm dongle rồi bấm Quét lại.", fg=T["fg"])
             self._badge(self.badge1, state == "up", 1)
             self._update_controls()
 
         def _on_ping(self, state: str, ms: float | None) -> None:
             if state == "up" and self.link_state == "up":
-                cur = self.lbl_link.cget("text").split("  ·  phản hồi")[0]
+                cur = language.source(self.lbl_link).split("  ·  phản hồi")[0]
                 self.lbl_link.configure(text=f"{cur}  ·  phản hồi {ms:.0f} ms")
 
         def _on_plan(self, sectors, total) -> None:
@@ -1607,7 +1820,7 @@ def run_gui(settings: Settings) -> None:
                 el = int(time.monotonic() - self.started)
                 self.lbl_rate.configure(text=self._rate_text + f"tổng {el // 60:02d}:{el % 60:02d}")
                 self._draw_bar()
-                root.title(f"DAPLink Flasher – {'nạp xong' if ok else 'chưa xong'}")
+                root.title(f"DAPLink Flasher · {'Nạp xong' if ok else 'Chưa xong'} · Trần Nguyên Bình")
                 try:
                     import winsound
                     winsound.MessageBeep(winsound.MB_ICONASTERISK if ok else winsound.MB_ICONHAND)
@@ -1622,7 +1835,7 @@ def run_gui(settings: Settings) -> None:
                             fg=T["accent_ink"] if done else T["muted"])
 
         def _readout_idle(self) -> None:
-            self.lbl_pct.configure(text="0%", fg=T["muted"])
+            self.lbl_pct.configure(text="0%", fg=T["fg"])
             total = self.image_total
             self.lbl_kb.configure(text=f"0 / {total / 1024:.1f} KB" if total else "")
             self.lbl_now.configure(text="Chưa nạp" if total else "Chưa có firmware")
@@ -1639,38 +1852,23 @@ def run_gui(settings: Settings) -> None:
             frac = self.done / self.image_total if self.image_total else 0
             color = T["ok"] if self.result else T["err"] if self.result is False else T["accent"]
             if frac > 0:
-                c.create_rectangle(0, 0, w * frac, 6, fill=color, width=0)
+                c.create_rectangle(0, 0, w * frac, 10, fill=color, width=0)
 
         def _draw_map(self) -> None:
             c = self.map
             c.delete("all")
             w = max(c.winfo_width(), 300)
-            gap, y0, h = 4, 28, 46
+            gap, y0, h = 7, 24, 26
             bw = (w - gap * (SECTOR_COUNT - 1)) / SECTOR_COUNT
 
-            def x_of(addr: int) -> float:
-                off = addr - FLASH_BASE
-                i = min(off // SECTOR_SIZE, SECTOR_COUNT - 1)
-                return i * (bw + gap) + (off - i * SECTOR_SIZE) / SECTOR_SIZE * bw
-
-            if self.image_range:
-                xs, xe = x_of(self.image_range[0]), x_of(self.image_range[1] - 1)
-                col = T["accent_text"]
-                c.create_line(xs, 19, xe, 19, fill=col, width=2)
-                c.create_line(xs, 15, xs, 23, fill=col, width=2)
-                c.create_line(xe, 15, xe, 23, fill=col, width=2)
-                name = Path(self.var_image.get()).name
-                c.create_text(xs, 6, anchor="w", text=f"{name}  ·  {self.image_total / 1024:.1f} KB",
-                              fill=col, font=F["small"])
             for i in range(SECTOR_COUNT):
                 x0 = i * (bw + gap)
                 x1 = min(x0 + bw, w - 1)
+                c.create_text((x0 + x1) / 2, 13, text=f"S{i}", font=F["badge"], fill=T["fg"])
                 v = self.sector_view.get(i)
                 if v is None:
                     c.create_rectangle(x0, y0, x1, y0 + h, fill=T["sunken"], outline=T["line"])
-                    c.create_text(x0 + 2, y0 + h + 13, anchor="w", text=f"S{i}", font=F["badge"], fill=T["muted"])
-                    c.create_text(x0 + 26, y0 + h + 13, anchor="w", text="trống", font=F["small"],
-                                  fill=_mix(T["muted"], T["bg"], 0.3))
+                    c.create_text((x0 + x1) / 2, y0 + h + 13, text="Không ghi", font=F["small"], fill=T["muted"])
                     continue
                 state = v["state"]
                 color = T.get(STATE_COLOR.get(state, ""), T["line"])
@@ -1684,12 +1882,12 @@ def run_gui(settings: Settings) -> None:
                     c.create_rectangle(x0 + 1, y0 + h - 6, x1 - 1, y0 + h - 1, fill=color, width=0)
                 if state in ("checking", "erasing", "writing", "verifying"):
                     c.create_rectangle(x0, y0, x1, y0 + h, outline=color, width=2)
-                label = STATE_TEXT[state]
+                label = {"pending": "Chờ", "checking": "Đọc CRC", "erasing": "Xóa", "writing": "Ghi",
+                         "verifying": "So CRC", "done": "CRC OK", "match": "Đã khớp", "dirty": "Ghi lại"}[state]
                 if state == "writing" and v["total"]:
                     label += f" {v['written'] / v['total'] * 100:.0f}%"
-                c.create_text(x0 + 2, y0 + h + 13, anchor="w", text=f"S{i}", font=F["badge"], fill=T["fg"])
-                c.create_text(x0 + 26, y0 + h + 13, anchor="w", text=label, font=F["small"],
-                              fill=color if state != "pending" else T["muted"])
+                c.create_text((x0 + x1) / 2, y0 + h + 13, text=label, font=F["small"],
+                               fill=T["ok"] if state == "match" else color if state != "pending" else T["muted"])
             label_w = tkfont.Font(font=F["mono_s"]).measure("0x0800 0000") + 12
             for i in (0, 2, 4, 6):
                 x = i * (bw + gap)
@@ -1699,7 +1897,9 @@ def run_gui(settings: Settings) -> None:
             c.create_text(w - 1, y0 + h + 34, anchor="e", text=fmt_addr(FLASH_END - 1), font=F["mono_s"],
                           fill=T["muted"])
 
-    App()
+    app = App()
+    if on_ready is not None:
+        root.after(0, lambda: on_ready(root, app))
     root.mainloop()
 
 

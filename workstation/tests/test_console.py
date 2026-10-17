@@ -89,6 +89,7 @@ class ConsoleTests(unittest.TestCase):
 
     def test_gui_cancel_does_not_send_reset(self):
         app = console.Console.__new__(console.Console)
+        app.dialogs = console.Dialogs(console.Language(), console.messagebox)
         app.require_session = Mock(return_value=console.DEFAULTS)
         app.last_data = {"navigation_available": False}
         app.session = {"mode": "mapping"}
@@ -149,6 +150,7 @@ class ConsoleTests(unittest.TestCase):
 
     def test_reset_in_navigation_is_blocked_before_confirmation(self):
         app = console.Console.__new__(console.Console)
+        app.dialogs = console.Dialogs(console.Language(), console.messagebox)
         app.require_session = Mock(return_value=console.DEFAULTS)
         app.session = {"mode": "navigation"}
         app.last_data = {"navigation_available": False}
