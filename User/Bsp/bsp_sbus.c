@@ -170,37 +170,40 @@ bool sbus_is_online(void)
     return true;
 }
 
-RC_ControlMode_t sbus_get_control_mode(void)
-{
-    if (!sbus_is_online())
-    {
-        return RC_MODE_AUTO_ROS2; /* Default to ROS2 /cmd_vel when transmitter is off */
-    }
+/* Armed at boot to match the motor_apply_enable(1) the Motor task does on
+   startup; in switch mode the first valid frame replaces it with switch E. */
+static uint8_t s_armed         = 1U;
+static uint8_t s_arm_level     = 0U;   /* debounced E level, previous cycle      */
+static uint8_t s_arm_seen      = 0U;   /* 0 until the first valid frame is read  */
+static uint8_t s_estop_latched = 0U;   /* set by a press of F, cleared by E      */
 
-    /* Switch A / Channel 5 (ch[4]):
-     * Range: ~364 (Up) / ~1024 (Mid) / ~1684 (Down)
-     */
-    if (sbus.ch[4] < 700)
-    {
-        return RC_MODE_MANUAL_RC;      /* Switch Up: Manual RC Joy Control */
-    }
-    else if (sbus.ch[4] >= 700 && sbus.ch[4] <= 1350)
-    {
-        return RC_MODE_AUTO_ROS2;      /* Switch Mid: Auto ROS 2 /cmd_vel Control */
-    }
-    else
-    {
-        return RC_MODE_EMERGENCY_STOP; /* Switch Down: E-STOP */
-    }
+/* Momentary button F reads HIGH while pressed. Anything but a clear LOW also
+   stops the robot, so an unassigned or mid-scale channel cannot leave it live. */
+static bool estop_pressed(void)
+{
+    return sbus.ch[RC_CH_ESTOP] >= RC_SW_LOW;
 }
 
-/* Armed at boot to match the motor_apply_enable(1) the Motor task does on
-   startup, so the button starts in sync with the hardware. */
-static uint8_t s_armed        = 1U;
-static uint8_t s_arm_level    = 0U;   /* debounced button level, previous cycle */
-static uint8_t s_arm_seen     = 0U;   /* 0 until the first valid frame is read  */
+RC_ControlMode_t sbus_get_control_mode(void)
+{
+    /* No link or receiver failsafe: the E-stop button is out of reach, so stop.
+       This used to fall back to AUTO, which let /cmd_vel drive the robot with
+       the transmitter switched off. */
+    if (!sbus_is_online())
+    {
+        return RC_MODE_EMERGENCY_STOP;
+    }
 
-void sbus_arm_update(void)
+    if (s_estop_latched || estop_pressed())
+    {
+        return RC_MODE_EMERGENCY_STOP;
+    }
+
+    /* Switch A: AUTO needs a clear HIGH (down); anything else is MANUAL. */
+    return (sbus.ch[RC_CH_MODE] > RC_SW_HIGH) ? RC_MODE_AUTO_ROS2 : RC_MODE_MANUAL_RC;
+}
+
+void sbus_switch_update(void)
 {
     if (!sbus_is_online())
     {
@@ -210,10 +213,17 @@ void sbus_arm_update(void)
         return;
     }
 
+    /* F is a push button: one press latches the E-stop until it is reset. */
+    if (estop_pressed() && !s_estop_latched)
+    {
+        s_estop_latched = 1U;
+        printf("[SBUS] E-stop F pressed -> LATCHED (reset: E off, then on)\r\n");
+    }
+
     /* Hysteresis: keep the previous level while the channel is in the dead zone. */
     uint8_t level = s_arm_level;
-    if (sbus.ch[RC_CH_ARM] > RC_ARM_HIGH)      level = 1U;
-    else if (sbus.ch[RC_CH_ARM] < RC_ARM_LOW)  level = 0U;
+    if (sbus.ch[RC_CH_ARM] > RC_SW_HIGH)      level = 1U;
+    else if (sbus.ch[RC_CH_ARM] < RC_SW_LOW)  level = 0U;
 
     if (!s_arm_seen)
     {
@@ -225,20 +235,29 @@ void sbus_arm_update(void)
         return;
     }
 
+    uint8_t was_armed = s_armed;
 #if RC_ARM_TOGGLE
     if (level && !s_arm_level)   /* rising edge = one press */
     {
         s_armed = s_armed ? 0U : 1U;
-        printf("[SBUS] Arm button -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
+        printf("[SBUS] Enable button E -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
     }
 #else
     if (level != s_armed)
     {
         s_armed = level;
-        printf("[SBUS] Arm switch -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
+        printf("[SBUS] Enable switch E -> %s\r\n", s_armed ? "ARMED" : "DISARMED");
     }
 #endif
     s_arm_level = level;
+
+    /* Reset: re-enabling the motors with E while F is released. Requiring the
+       off -> on cycle makes resuming after an E-stop a deliberate action. */
+    if (s_estop_latched && s_armed && !was_armed && !estop_pressed())
+    {
+        s_estop_latched = 0U;
+        printf("[SBUS] E-stop reset by switch E\r\n");
+    }
 }
 
 bool sbus_is_armed(void)

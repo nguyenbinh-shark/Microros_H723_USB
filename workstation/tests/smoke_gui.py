@@ -17,6 +17,7 @@ def main():
     parser.add_argument("--maps", action="store_true")
     parser.add_argument("--download-check", action="store_true")
     parser.add_argument("--reconnect-check", action="store_true")
+    parser.add_argument("--navigation", action="store_true", help="Inspect live Nav2 without sending a goal")
     args = parser.parse_args()
     root = create_root()
     app = Console(root)
@@ -40,7 +41,11 @@ def main():
             print("Timed out:", app.activity.get(), app.map_info.get(), flush=True)
             app.close()
             return
-        if app.last_data and app.last_data["mapping_ready"] and app.stream and app.stream.frames >= 15:
+        ready = app.last_data and (app.last_data.get("navigation_available") if args.navigation else app.last_data["mapping_ready"])
+        if ready and app.stream and app.stream.frames >= 15:
+            if args.navigation:
+                assert app.session["mode"] == "navigation"
+                app.tabs.select(app.tab_frames["navigation"])
             if args.reconnect_check and reconnect_pid is None:
                 reconnect_pid = app.stream.process.pid
                 print("Stopping only the PC subscriber", reconnect_pid, flush=True)
@@ -92,7 +97,8 @@ def main():
                     box = (root.winfo_rootx(), root.winfo_rooty(),
                            root.winfo_rootx() + root.winfo_width(),
                            root.winfo_rooty() + root.winfo_height())
-                    ImageGrab.grab(bbox=box).save(STATE / ("console-maps-preview.png" if args.maps else "console-preview.png"))
+                    ImageGrab.grab(bbox=box).save(STATE / ("console-nav-preview.png" if args.navigation else
+                                                          "console-maps-preview.png" if args.maps else "console-preview.png"))
                 except ImportError:
                     pass
                 print("GUI connected; mapping data and status labels OK")

@@ -83,6 +83,7 @@ class ConsoleTests(unittest.TestCase):
         app = console.Console.__new__(console.Console)
         app.require_session = Mock(return_value=console.DEFAULTS)
         app.last_data = {"navigation_available": False}
+        app.session = {"mode": "mapping"}
         app.task = Mock()
         with patch.object(console.messagebox, "askyesno", return_value=False):
             app.reset_map()
@@ -113,12 +114,52 @@ class ConsoleTests(unittest.TestCase):
         command.assert_called_once_with(console.DEFAULTS, "probe", real)
 
     def test_ambiguous_live_sessions_never_guess_domain(self):
-        real = dict(mode="mapping", simulated_time=False, domain=0)
+        real = dict(pid=41, mode="mapping", simulated_time=False, domain=0)
         with patch.object(console, "remote", return_value=json.dumps({"launches": [real, dict(real, domain=1)]})), \
              patch.object(console, "capture") as capture:
             report = console.check_connection(console.DEFAULTS)
         self.assertIsNone(report["session"])
         capture.assert_not_called()
+
+    def test_navigation_is_selected_while_replay_mapping_is_ignored(self):
+        nav = dict(pid=90, mode="navigation", simulated_time=False, domain=0)
+        replay = dict(pid=91, mode="mapping", simulated_time=True, domain=62)
+        with patch.object(console, "remote", return_value=json.dumps({"launches": [nav, replay]})):
+            report = console.inspect_robot(console.DEFAULTS)
+        self.assertEqual(report["session"], nav)
+
+    def test_start_in_navigation_reports_mode_without_starting_mapping(self):
+        nav = dict(pid=90, mode="navigation", simulated_time=False, domain=0)
+        with patch.object(sys, "argv", ["remote_ops", "start"]), \
+             patch.object(remote_ops, "launches", return_value=[nav]), \
+             patch.object(remote_ops, "run") as run, patch("builtins.print") as output:
+            remote_ops.main()
+            report = json.loads(output.call_args.args[0])
+        self.assertEqual(report["status"], "different_mode")
+        self.assertEqual(report["mode"], "navigation")
+        run.assert_not_called()
+
+    def test_reset_in_navigation_is_blocked_before_confirmation(self):
+        app = console.Console.__new__(console.Console)
+        app.require_session = Mock(return_value=console.DEFAULTS)
+        app.session = {"mode": "navigation"}
+        app.last_data = {"navigation_available": False}
+        app.task = Mock()
+        with patch.object(console.messagebox, "showinfo"), patch.object(console.messagebox, "askyesno") as confirm:
+            app.reset_map()
+        confirm.assert_not_called()
+        app.task.assert_not_called()
+
+    def test_gui_navigation_start_connects_without_claiming_mapping_started(self):
+        app = console.Console.__new__(console.Console)
+        app.config = Mock(return_value=console.DEFAULTS)
+        app.status = {key: Mock() for key in ("mapping", "sensors", "motion", "navigation")}
+        app.task, app.append, app.root, app.check = Mock(), Mock(), Mock(), Mock()
+        app.service("start")
+        app.task.call_args.args[2]('{"status":"different_mode","mode":"navigation"}')
+        self.assertIn("Robot đang Navigation", app.append.call_args.args[0])
+        self.assertIn("chưa chuyển sang Mapping", app.append.call_args.args[0])
+        app.root.after.assert_called_once_with(0, app.check)
 
     def test_remote_ssh_uses_stdin_and_quotes_arguments(self):
         with patch.object(console, "capture", return_value="ok") as capture:

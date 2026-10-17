@@ -436,17 +436,17 @@ void Motor_task(void)
         /* A Bus_Off controller never rejoins on its own — check every cycle. */
         (void)CAN_BusOffRecover();
 
-        /* The RC arm button drives the same request the /motor_enable topic
-           writes, so the two cannot fight over g_system_enabled. Only act on a
-           change — otherwise the RC would pin the state and ROS could never
-           enable or disable anything. */
-        sbus_arm_update();
+        /* Switch E drives the same request the /motor_enable topic writes, so
+           the two cannot fight over g_system_enabled. Only act on a change —
+           otherwise the RC would pin the state and ROS could never enable or
+           disable anything. */
+        sbus_switch_update();
         if (sbus_is_online())
         {
             uint8_t rc_arm = sbus_is_armed() ? 1U : 0U;
             if (rc_arm != rc_arm_prev)
             {
-                printf("[MOTOR] RC arm button -> %s\r\n", rc_arm ? "ENABLE" : "DISABLE");
+                printf("[MOTOR] RC switch E -> %s\r\n", rc_arm ? "ENABLE" : "DISABLE");
                 motor_enable_set(rc_arm);
                 rc_arm_prev = rc_arm;
             }
@@ -491,9 +491,14 @@ void Motor_task(void)
 
         /* ── SBUS Remote Controller Arbitration ─────────────────── */
         uint8_t rc_manual = 0U;
-        if (sbus_is_online())
+        RC_ControlMode_t rc_mode = sbus_get_control_mode();
+        if (rc_mode == RC_MODE_EMERGENCY_STOP)
         {
-            RC_ControlMode_t rc_mode = sbus_get_control_mode();
+            /* Switch F, or no RC link at all: nothing drives the wheels. */
+            effective_enable = 0U;
+        }
+        else
+        {
             if (rc_mode == RC_MODE_MANUAL_RC)
             {
                 /* Manual Teleop: Max 1.0 m/s linear, 2.5 rad/s turn. The stick
@@ -502,14 +507,10 @@ void Motor_task(void)
                 sbus_get_motion_cmd(1.0f, 2.5f, &effective_vx, &effective_wz);
                 effective_enable = sbus_is_armed() ? 1U : 0U;
             }
-            else if (rc_mode == RC_MODE_EMERGENCY_STOP)
-            {
-                effective_enable = 0U;
-            }
-            /* If RC_MODE_AUTO_ROS2: keeps the ROS 2 command topics */
+            /* RC_MODE_AUTO_ROS2 keeps the ROS 2 command topics. */
 
-            /* The arm button outranks the mode switch: disarmed keeps both
-               wheels dead whether the command came from RC or from ROS. */
+            /* Switch E outranks the mode switch: disabled keeps both wheels
+               dead whether the command came from RC or from ROS. */
             if (!sbus_is_armed())
             {
                 effective_enable = 0U;

@@ -126,10 +126,14 @@ def pc_profile(xml, host, domain):
 def inspect_robot(settings):
     robot = json.loads(remote(settings, "status"))
     sessions = [item for item in robot["launches"]
-                if item["mode"] == "mapping" and not item["simulated_time"]]
+                if item["mode"] in ("mapping", "navigation") and not item["simulated_time"]]
     if len(sessions) != 1:
+        note = "Robot chưa chạy Mapping hoặc Navigation. Bấm Bắt đầu mapping nếu muốn tạo bản đồ."
+        if sessions:
+            note = "Có nhiều phiên robot: " + "; ".join(
+                f"{item['mode']} (PID {item['pid']}, domain {item['domain']})" for item in sessions)
         return {"robot": robot, "session": None, "data": None,
-                "note": "Chưa có đúng một phiên mapping thật. Dùng nút Bắt đầu mapping khi robot đã sẵn sàng."}
+                "note": note}
     session = sessions[0]
     return {"robot": robot, "session": session, "data": None}
 
@@ -328,7 +332,7 @@ class Console:
             self.stream = TelemetryStream(session_args(settings, "stream", self.session),
                                            STATE / "telemetry.log", creationflags=HIDDEN)
             self.stream_key, self.stream_seen = key, 0
-            self.append("Đã kết nối phiên mapping — đang nhận trạng thái ROS liên tục.")
+            self.append("Đã kết nối phiên " + self.session.get("mode", "mapping").capitalize() + " — đang nhận trạng thái ROS liên tục.")
         if data:
             self.render_data(data)
         report["data"] = self.last_data
@@ -340,14 +344,17 @@ class Console:
         self.last_data = data
         self.last_check = time.monotonic()
         domain = self.session["domain"]
+        navigating = self.session.get("mode") == "navigation"
         receiving = any(topic["age_s"] is not None and topic["age_s"] < 2 for topic in data["topics"].values())
         self.status["connection"].set(("ROS: đang nhận trực tiếp" if receiving else "ROS: chưa nhận dữ liệu mới")
                                       + f" · Pi {self.connected_settings['host']}" + (" · SSH chưa xác nhận" if not self.last_meta else ""))
         if data["mapping_ready"]:
             info = data["map"]
-            self.status["mapping"].set(f"Có dữ liệu · domain {domain} · map {info['width']}×{info['height']} · {info['resolution']:.3f} m/ô · TF OK")
+            mode = "Navigation · map đã lưu" if navigating else "Mapping · map đang dựng"
+            self.status["mapping"].set(f"{mode} · domain {domain} · {info['width']}×{info['height']} · {info['resolution']:.3f} m/ô · TF OK")
         else:
-            self.status["mapping"].set(f"Domain {domain} · Thiếu map, TF hoặc dữ liệu scan/odom mới")
+            mode = "Navigation" if navigating else "Mapping"
+            self.status["mapping"].set(f"{mode} · domain {domain} · Thiếu map, TF hoặc dữ liệu scan/odom mới")
         fresh = lambda topic: (data["topics"][topic]["age_s"] is not None and data["topics"][topic]["age_s"] < 2)
         labels = (("/scan", "LiDAR"), ("/odom", "Odom"), ("/imu/data", "IMU"), ("/motor_fb", "Motor"))
         self.status["sensors"].set(" · ".join(label + (": OK" if fresh(topic) else ": chưa có dữ liệu mới") for topic, label in labels))
@@ -365,7 +372,9 @@ class Console:
         if velocity:
             motion.append(f"v={velocity['linear']:+.3f} m/s, ω={velocity['angular']:+.3f} rad/s")
         self.status["motion"].set(" · ".join(motion) or "Chưa có dữ liệu mới")
-        self.status["navigation"].set("Có action server — mở RViz để vận hành" if data["navigation_available"] else "Chưa chạy Nav2 trên Pi — hiện dùng mapping")
+        self.status["navigation"].set("Có action server — mở RViz để vận hành" if data["navigation_available"]
+                                      else "Navigation đang khởi động/chưa có action server" if navigating
+                                      else "Chưa có action server Nav2 trong phiên hiện tại")
         for topic, info in data["topics"].items():
             age = info["age_s"]
             values = (info["messages"], "—" if age is None else f"{age:.2f}",
@@ -386,8 +395,8 @@ class Console:
         settings = self.require_session()
         if not settings:
             return
-        if action == "navigation" and not self.last_data.get("navigation_available"):
-            messagebox.showinfo("Navigation", "Pi hiện chưa chạy Nav2. Mapping và lưu map đã dùng được; chức năng chọn đích cần cấu hình Nav2 trên robot trước.")
+        if action == "navigation" and not (self.last_data or {}).get("navigation_available"):
+            messagebox.showinfo("Navigation", "Chưa nhận được action server Nav2 trong phiên hiện tại. Kiểm tra chế độ và trạng thái robot trước.")
             return
         if action in self.viewers and self.viewers[action].poll() is None:
             messagebox.showinfo("RViz", "Cửa sổ RViz này đang mở.")
@@ -402,6 +411,9 @@ class Console:
     def save_map(self):
         settings = self.require_session()
         if not settings:
+            return
+        if self.session.get("mode") == "navigation":
+            messagebox.showinfo("Lưu map", "Robot đang Navigation với map đã lưu. Xem map trong tab Bản đồ đã lưu; tạo map mới cần chuyển sang Mapping.")
             return
         name = self.map_name.get().strip()
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", name):
@@ -423,7 +435,7 @@ class Console:
         settings = self.require_session()
         if not settings:
             return
-        if self.last_data.get("navigation_available"):
+        if self.session.get("mode") == "navigation" or (self.last_data or {}).get("navigation_available"):
             messagebox.showinfo("Tạo map lại", "Hãy dừng chế độ navigation và chuyển sang mapping trước khi tạo map mới.")
             return
         if not messagebox.askyesno(
@@ -456,11 +468,14 @@ class Console:
         def finished(result):
             report = json.loads(result)
             existing = report.get("status") == "already_running"
-            if existing:
+            navigation = report.get("status") == "different_mode" and report.get("mode") == "navigation"
+            if navigation:
+                self.append("Robot đang Navigation. Đã kết nối vào phiên hiện có; chưa chuyển sang Mapping. Dừng phiên Navigation trước khi tạo map mới.")
+            elif existing:
                 self.append("Mapping đang chạy — kết nối vào phiên hiện có. Muốn dựng map từ đầu, bấm Tạo map lại.")
             else:
                 self.append("Đã gửi yêu cầu bắt đầu mapping." if action == "start" else "Đã dừng phiên mapping của Console.")
-            self.root.after(0 if existing else 2000, self.check)
+            self.root.after(0 if existing or navigation else 2000, self.check)
         self.task("Kiểm tra / bắt đầu mapping…" if action == "start" else "Đang dừng mapping…",
                   lambda: remote(settings, action), finished)
 

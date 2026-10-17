@@ -278,19 +278,20 @@ void LCD_Debug_Update(void)
             LCD_ShowString(172, 53, (const uint8_t *)buf, UI_COLOR_YELLOW, UI_COLOR_PANEL, 12, 0);
 
             if (sbus_is_online()) {
+                /* Most restrictive state first: F, then E, then A. */
                 RC_ControlMode_t m = sbus_get_control_mode();
-                if (!sbus_is_armed()) {
+                if (m == RC_MODE_EMERGENCY_STOP) {
+                    LCD_ShowString(172, 66, (const uint8_t *)"RC:ESTOP ", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+                } else if (!sbus_is_armed()) {
                     LCD_ShowString(172, 66, (const uint8_t *)"RC:DISARM", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
                 } else if (m == RC_MODE_MANUAL_RC) {
                     LCD_ShowString(172, 66, (const uint8_t *)"RC:MANUAL", UI_COLOR_GREEN, UI_COLOR_PANEL, 12, 0);
-                } else if (m == RC_MODE_AUTO_ROS2) {
-                    LCD_ShowString(172, 66, (const uint8_t *)"RC:AUTO  ", UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
                 } else {
-                    LCD_ShowString(172, 66, (const uint8_t *)"RC:ESTOP ", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
+                    LCD_ShowString(172, 66, (const uint8_t *)"RC:AUTO  ", UI_COLOR_ACCENT, UI_COLOR_PANEL, 12, 0);
                 }
             } else {
-                uint8_t motor_state = motor_get_enabled_state();
-                LCD_ShowString(172, 66, (const uint8_t *)(motor_state ? "ENABLED " : "IDLE/OFF"), (motor_state ? UI_COLOR_GREEN : UI_COLOR_MUTED), UI_COLOR_PANEL, 12, 0);
+                /* No RC link stops the wheels (see sbus_get_control_mode). */
+                LCD_ShowString(172, 66, (const uint8_t *)"RC:LOST  ", UI_COLOR_RED, UI_COLOR_PANEL, 12, 0);
             }
 
             CAN_BusMetrics_t can_m;

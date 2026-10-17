@@ -65,3 +65,15 @@ Hướng dẫn sử dụng: [README](README.md).
 - Kiểm tra mất/kết nối lại: chủ động dừng riêng subscriber trên PC, GUI báo
   mất luồng, sau đó mở subscriber mới và nhận lại đầy đủ dữ liệu. Tải map về
   PC vẫn thành công sau khi kết nối lại; không gửi lệnh reset/stop tới robot.
+
+## Nhận diện Navigation lúc 18:55 ngày 17/10/2026
+
+- Lỗi 18:53 đến từ phiên `mode:=navigation`, không phải nhiều phiên Mapping.
+  Đã mở rộng nhận diện cho cả Mapping và Navigation; loại các phiên dùng
+  thời gian mô phỏng. Start khi Navigation chạy trả về `different_mode` và
+  không gọi start/stop/restart/reset robot.
+- GUI kiểm tra trực tiếp phiên Navigation PID 77922, domain 0: nhận map đã lưu
+  `180×217`, scan, odom, IMU, motor, TF và action server Nav2; 16 snapshot liên tiếp.
+  Chưa gửi goal hoặc xác nhận hành vi chạy tới đích.
+- 35 unit test qua, thêm các trường hợp Navigation cùng replay, bấm Start
+  khi Navigation đang chạy và chặn reset map trong chế độ Navigation.

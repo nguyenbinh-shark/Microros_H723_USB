@@ -85,6 +85,10 @@ Thao tác cài chỉ **enable**, không khởi động lại phiên mapping đan
 Nếu đã có đúng một phiên mapping thật, bấm **Bắt đầu mapping** sẽ kết nối vào
 phiên đó và kiểm tra dữ liệu, không báo lỗi hoặc mở thêm phiên. Nút dừng chỉ
 dừng `rpbot-mapping.service`; không tìm và giết phiên thủ công.
+Nếu robot đang **Navigation**, Console kết nối vào phiên Navigation và báo rõ
+chế độ đó. Nút **Bắt đầu mapping** không tự dừng Navigation hoặc chuyển chế độ.
+Muốn dựng map mới, dừng phiên Navigation ở nơi đã khởi động rồi bắt đầu Mapping.
+Nếu có nhiều phiên thật, thông báo liệt kê chế độ, PID và domain để phân biệt.
 Không bật thêm micro-ROS Agent cùng dùng cổng STM32. Dịch vụ tự chạy cần
 `Linger=yes` cho tài khoản Pi; bộ cài sẽ kiểm tra điều kiện này.
 
@@ -97,13 +101,13 @@ map mới; map đã lưu không tự được nạp lại. Để tắt tự ch�
 systemctl --user disable rpbot-mapping.service
 ```
 
-## Navigation về sau
+## Navigation
 
-Hiện máy Pi đã có pipeline SLAM nhưng chưa có đầy đủ Nav2 bringup, planner,
-controller và localization để vận hành navigation. Cài plugin RViz trên PC
-không làm robot có khả năng tự điều hướng. Giai đoạn tiếp theo cần cấu hình
-Nav2 trên Pi với map đã lưu, footprint, giới hạn vận tốc và quyền điều khiển
-giữa RC/teleop/Nav2; sau đó kiểm tra thực tế trên robot.
+Pi hiện đã có chế độ `navigation` trong launch. Console nhận diện được phiên
+Navigation đang chạy, nhận map/cảm biến/TF và mở RViz Navigation khi phát hiện
+action server Nav2. Kiểm tra GUI không gửi đích hoặc xác nhận robot đã chạy tới đích.
+Console chưa có nút khởi động Navigation/chuyển chế độ; chọn map trong thư viện
+chỉ để xem trước. Tạo map lại và lưu map SLAM được chặn khi đang Navigation.
 
 ## Kiểm tra cho người phát triển
 

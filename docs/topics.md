@@ -41,6 +41,12 @@ Each command topic maps to exactly one RobStride actuator `run_mode`:
 
 - **Boot mode:** Velocity, until the first `/cmd_mit` or `/cmd_torque` message arrives. Those two share MIT mode, so switching between them costs no mode change.
 - **RC override:** with the SBUS transmitter in `MANUAL_RC`, the sticks produce a $(v, \omega)$ pair, so the motors run in Velocity mode regardless of which ROS topic spoke last.
+- **RC switches** (`User/Bsp/bsp_sbus.h`), highest priority first:
+  - **F (CH10), push button:** a press latches the E-stop. Switching E off and then on, with F released, resets it.
+  - **No RC link** (receiver failsafe or no frame for 300 ms): the wheels stop.
+  - **E (CH9):** enables or disables the motors, like `/motor_enable`.
+  - **A (CH5):** down selects AUTO (the ROS command topics drive the robot); any other position selects MANUAL (the sticks drive it).
+  - The LCD shows `RC:ESTOP`, `RC:LOST`, `RC:DISARM`, `RC:MANUAL` or `RC:AUTO`.
 - **Safety Timeout:** If the active command topic is silent for `CMD_VEL_TIMEOUT_MS` (500 ms), the firmware holds the wheels in the current mode and raises `MSTAT_CMD_TIMEOUT`:
   - Velocity mode: `SPD_REF = 0 rad/s`, actively held by the motor's PI loop.
   - MIT mode: $K_p = 0$, $v = 0$, $K_d = 0.8$, $\tau = 0$ — damping only, the wheel can still be pushed.

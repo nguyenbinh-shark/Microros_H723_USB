@@ -208,11 +208,13 @@ def main():
     else:
         current = launches()
         if args.action == "start" and current:
-            live = [item for item in current if item["mode"] == "mapping" and not item["simulated_time"]]
+            live = [item for item in current if item["mode"] in ("mapping", "navigation") and not item["simulated_time"]]
             if len(live) != 1:
-                raise RuntimeError("Có phiên robot khác đang chạy hoặc nhiều phiên mapping; hãy kiểm tra trước khi mở phiên mới")
-            print(json.dumps({"requested": "start", "status": "already_running",
-                              "pid": live[0]["pid"], "domain": live[0]["domain"]}))
+                details = "; ".join(f"{item['mode']} (PID {item['pid']}, domain {item['domain']})" for item in current)
+                raise RuntimeError("Chưa thể mở Mapping. Các phiên đang chạy: " + details)
+            active = live[0]
+            print(json.dumps({"requested": "start", "status": "already_running" if active["mode"] == "mapping" else "different_mode",
+                              "mode": active["mode"], "pid": active["pid"], "domain": active["domain"]}))
             return
         if args.action == "stop" and run(["systemctl", "--user", "is-active", SERVICE]).returncode:
             raise RuntimeError("Mapping is not owned by RPBot Console; existing session left unchanged")

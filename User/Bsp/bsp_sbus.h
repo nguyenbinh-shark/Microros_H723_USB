@@ -36,18 +36,25 @@ extern "C" {
 #define RC_VX_SIGN         (+1)                   /* radio sends stick-up low      */
 #define RC_WZ_SIGN         (-1)                   /* radio sends stick-left low    */
 
-/* ── Motor arm button ───────────────────────────────────────────────────────
- * A channel on the transmitter that enables / disables both wheels, mapped to
- * the same path as the /motor_enable topic.
- *   RC_ARM_TOGGLE 1 = momentary button: every press flips the armed state.
- *   RC_ARM_TOGGLE 0 = 2-position switch: HIGH = armed, LOW = disarmed.
- * The two thresholds leave a dead zone in the middle so a noisy channel cannot
- * chatter between the two states.
+/* ── Switch assignment (user's transmitter, 2026-10-17) ─────────────────────
+ *   A = CH5  control mode : switch HIGH (down) = AUTO (/cmd_vel), else MANUAL
+ *   E = CH9  motor enable : mapped to the same path as the /motor_enable topic
+ *   F = CH10 E-stop       : push button; a press latches the E-stop, and
+ *                           switching E off then on (F released) resets it
+ *   B = CH6 and C = CH7 are not used by the firmware.
+ * HIGH / LOW thresholds leave a dead zone so a noisy channel cannot chatter.
+ * Values in between count as "not clearly set": MANUAL for A, STOP for F.
  */
-#define RC_CH_ARM          5                      /* CH6                            */
-#define RC_ARM_HIGH        1350                   /* above = pressed / switch high  */
-#define RC_ARM_LOW         700                    /* below = released / switch low  */
-#define RC_ARM_TOGGLE      1
+#define RC_CH_MODE         4                      /* CH5, switch A                  */
+#define RC_CH_ARM          8                      /* CH9, switch E                  */
+#define RC_CH_ESTOP        9                      /* CH10, switch F                 */
+#define RC_SW_HIGH         1350                   /* above = switch high (down)     */
+#define RC_SW_LOW          700                    /* below = switch low (up)        */
+
+/* Motor enable on E:
+ *   RC_ARM_TOGGLE 1 = momentary button: every press flips the enabled state.
+ *   RC_ARM_TOGGLE 0 = 2-position switch: HIGH = enabled, LOW = disabled. */
+#define RC_ARM_TOGGLE      0
 
 typedef enum {
     RC_MODE_AUTO_ROS2 = 0,   /* Autonomous Nav2 / micro-ROS /cmd_vel mode */
@@ -79,7 +86,9 @@ void sbus_bsp_init(void);
 bool sbus_is_online(void);
 
 /**
- * @brief Get current control mode from RC switch (e.g. Channel 5 / Switch A)
+ * @brief Control mode from switches A and F. EMERGENCY_STOP when F is not in
+ *        the run position, or when the RC link is lost (the E-stop lives on
+ *        the transmitter, so no link must mean no motion).
  */
 RC_ControlMode_t sbus_get_control_mode(void);
 
@@ -93,10 +102,11 @@ RC_ControlMode_t sbus_get_control_mode(void);
 void sbus_get_motion_cmd(float max_vx, float max_wz, float *out_vx, float *out_wz);
 
 /**
- * @brief Edge-process the arm button. Call once per control cycle, from ONE
- *        task only — each press must be consumed exactly once.
+ * @brief Process switch E (motor enable) and button F (E-stop latch). Call once
+ *        per control cycle, from ONE task only — every press must be consumed
+ *        exactly once.
  */
-void sbus_arm_update(void);
+void sbus_switch_update(void);
 
 /**
  * @brief Latched armed state. Pure read, safe from any task.

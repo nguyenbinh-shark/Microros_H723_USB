@@ -5,7 +5,7 @@ Panels:
     Property Tree Widget:
       Expanded: ~
       Splitter Ratio: 0.5
-    Tree Height: 302
+    Tree Height: 416
   - Class: rviz_common/Views
     Expanded:
       - /Current View1
@@ -216,7 +216,7 @@ Visualization Manager:
   Value: true
   Views:
     Current:
-      Angle: 0
+      Angle: -1.114999532699585
       Class: rviz_default_plugins/TopDownOrtho
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
@@ -226,21 +226,21 @@ Visualization Manager:
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Scale: 55
+      Scale: 100
       Target Frame: base_footprint
       Value: TopDownOrtho (rviz_default_plugins)
-      X: 0
-      Y: 0
+      X: 2.117342472076416
+      Y: -3.220398187637329
     Saved: ~
 Window Geometry:
   Displays:
     collapsed: false
-  Height: 800
+  Height: 987
   Hide Left Dock: false
   Hide Right Dock: false
-  QMainWindow State: 000000ff00000000fd00000001000000000000019b000002cafc0200000002fb000000100044006900730070006c006100790073010000003b000001af000000c700fffffffb0000000a0056006900650077007301000001f000000115000000a000ffffff0000030f000002ca00000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
+  QMainWindow State: 000000ff00000000fd00000001000000000000019b00000385fc0200000002fb000000100044006900730070006c006100790073010000003b00000221000000c700fffffffb0000000a0056006900650077007301000002620000015e000000a000ffffff000005d30000038500000004000000040000000800000008fc0000000100000002000000010000000a0054006f006f006c00730100000000ffffffff0000000000000000
   Views:
     collapsed: false
-  Width: 1200
-  X: 176
-  Y: 6
+  Width: 1908
+  X: 0
+  Y: 0

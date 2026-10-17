@@ -39,7 +39,7 @@ def build(app):
     info = ttk.LabelFrame(outer, text="Trạng thái trực tiếp", padding=8)
     info.pack(fill="x", pady=(0, 10))
     app.status = {}
-    for key, label in (("connection", "Kết nối"), ("mapping", "Mapping"), ("sensors", "Cảm biến"),
+    for key, label in (("connection", "Kết nối"), ("mapping", "Chế độ / map"), ("sensors", "Cảm biến"),
                        ("motion", "Motor / vận tốc"), ("navigation", "Navigation"), ("boot", "Tự khởi động")):
         row = ttk.Frame(info)
         row.pack(fill="x", pady=1)
@@ -67,7 +67,7 @@ def build(app):
     row.pack(fill="x")
     for text, action in (("Mở RViz · Map", lambda: app.open_view("rviz")),
                          ("Bắt đầu mapping", lambda: app.service("start")),
-                         ("Dừng mapping", lambda: app.service("stop")), ("Tạo map lại", app.reset_map)):
+                         ("Dừng phiên Console", lambda: app.service("stop")), ("Tạo map lại", app.reset_map)):
         app.button(row, text, action).pack(side="left", padx=(0, 8))
     row = ttk.LabelFrame(mapping, text="Lưu map hiện tại trên Pi", padding=12)
     row.pack(fill="x", pady=16)
