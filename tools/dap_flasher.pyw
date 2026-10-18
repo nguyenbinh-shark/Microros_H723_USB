@@ -13,6 +13,8 @@ that chunk left behind (written, untouched or half written) and carries on from 
 
 Needs Python 3.10+ with Tk and OpenOCD (on PATH, through %OPENOCD%, or the copy bundled with
 STM32CubeIDE). hidapi (pip install hidapi) is optional; it only fills the probe list.
+Runs on Windows and Linux; on Linux install OpenOCD with `sudo apt install openocd` and give
+the desktop user USB access to the probe (packaging/linux/60-dap-flasher.rules).
 
 The same engine on the console:
     py dap_flasher.pyw --cli [FILE]      flash
@@ -53,9 +55,17 @@ from pathlib import Path
 
 # Inside DAPLinkFlasher.exe, PyInstaller unpacks the packed OpenOCD and icon here.
 BUNDLE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+if getattr(sys, "frozen", False) and os.name != "nt":
+    # The Linux build points LD_LIBRARY_PATH at its bundled libraries; the system
+    # OpenOCD must load its own.
+    os.environ.pop("LD_LIBRARY_PATH", None)
+    if "LD_LIBRARY_PATH_ORIG" in os.environ:
+        os.environ["LD_LIBRARY_PATH"] = os.environ.pop("LD_LIBRARY_PATH_ORIG")
 _REPO_IMAGE = Path(__file__).resolve().parent.parent / "build" / "microros_H7.elf"
 DEFAULT_IMAGE = str(_REPO_IMAGE) if _REPO_IMAGE.is_file() else ""
-SETTINGS_FILE = Path(os.environ.get("APPDATA", str(Path.home()))) / "dap_flasher" / "settings.json"
+_CONFIG_DIR = (os.environ.get("APPDATA") if os.name == "nt" else
+               os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
+SETTINGS_FILE = Path(_CONFIG_DIR or str(Path.home())) / "dap_flasher" / "settings.json"
 
 # STM32H723 bank 1: 1 MB in eight 128 KB sectors, programmed in 256-bit flash words.
 FLASH_BASE = 0x08000000
@@ -149,13 +159,17 @@ def find_openocd() -> tuple[str, str | None]:
     exe = os.environ.get("OPENOCD")
     scripts = os.environ.get("OPENOCD_SCRIPTS")
     packed = BUNDLE_DIR / "openocd"
-    if not exe and (packed / "bin" / "openocd.exe").is_file():
-        return str(packed / "bin" / "openocd.exe"), scripts or str(packed / "scripts")
+    name = "openocd.exe" if os.name == "nt" else "openocd"
+    if not exe and (packed / "bin" / name).is_file():
+        return str(packed / "bin" / name), scripts or str(packed / "scripts")
     exe = exe or shutil.which("openocd")
     if not exe:
-        for plug in sorted(glob.glob(r"C:\ST\STM32CubeIDE_*\STM32CubeIDE\plugins"), key=_natural_key, reverse=True):
+        installs = ([r"C:\ST\STM32CubeIDE_*\STM32CubeIDE\plugins"] if os.name == "nt" else
+                    ["/opt/st/stm32cubeide_*/plugins", str(Path.home() / "st" / "stm32cubeide_*" / "plugins")])
+        plugins = [plug for pattern in installs for plug in glob.glob(pattern)]
+        for plug in sorted(plugins, key=_natural_key, reverse=True):
             exes = sorted(glob.glob(os.path.join(
-                plug, "com.st.stm32cube.ide.mcu.externaltools.openocd.*", "tools", "bin", "openocd.exe")),
+                plug, "com.st.stm32cube.ide.mcu.externaltools.openocd.*", "tools", "bin", name)),
                 key=_natural_key)
             if exes:
                 exe = exes[-1]
@@ -166,6 +180,9 @@ def find_openocd() -> tuple[str, str | None]:
                     scripts = found[-1] if found else None
                 break
     if not exe or not os.path.isfile(exe):
+        if os.name != "nt":
+            raise FileNotFoundError("Không tìm thấy OpenOCD. Cài bằng sudo apt install openocd, "
+                                    "hoặc đặt biến môi trường OPENOCD=/đường/dẫn/openocd")
         raise FileNotFoundError("Không tìm thấy OpenOCD. Cài STM32CubeIDE, hoặc đặt biến môi trường "
                                 "OPENOCD=đường\\dẫn\\openocd.exe")
     return exe, scripts
@@ -506,9 +523,9 @@ class Flasher:
         """One attempt at a session with the current backend/clock; the chip must answer."""
         if self._openocd is None:
             self._openocd = find_openocd()
-            if self.s.kill_other_openocd and os.name == "nt":
-                r = subprocess.run(["taskkill", "/F", "/IM", "openocd.exe"], capture_output=True,
-                                   creationflags=NO_WINDOW)
+            if self.s.kill_other_openocd:
+                kill = ["taskkill", "/F", "/IM", "openocd.exe"] if os.name == "nt" else ["pkill", "-x", "openocd"]
+                r = subprocess.run(kill, capture_output=True, creationflags=NO_WINDOW)
                 if r.returncode == 0:
                     self.log("Đã đóng OpenOCD khác đang giữ DAPLink", "warn")
         exe, scripts = self._openocd
@@ -961,7 +978,8 @@ def run_gui(settings: Settings, *, on_ready=None) -> None:
     except (ImportError, AttributeError, OSError):
         pass
 
-    root = tk.Tk()
+    # The class name is the Linux WM_CLASS, matched by the launcher's StartupWMClass.
+    root = tk.Tk(className="DAPLinkFlasher")
     theme = settings.theme if settings.theme in THEMES else ("dark" if _windows_dark_mode() else "light")
     T = THEMES[theme]
     families = set(tkfont.families(root))
@@ -969,8 +987,8 @@ def run_gui(settings: Settings, *, on_ready=None) -> None:
     def pick(*names: str) -> str:
         return next((n for n in names if n in families), names[-1])
 
-    body = pick("Segoe UI", "Arial")
-    mono = pick("Consolas", "Courier New")
+    body = pick("Segoe UI", "Ubuntu", "Noto Sans", "DejaVu Sans", "Arial")
+    mono = pick("Consolas", "Ubuntu Mono", "DejaVu Sans Mono", "Courier New")
     F = {"title": (body, 17, "bold"), "step": (body, 11, "bold"), "badge": (body, 9, "bold"),
          "eyebrow": (body, 9, "bold"), "big": (body, 34, "bold"), "kb": (body, 12, "bold"),
          "body": (body, 10), "body_b": (body, 10, "bold"), "small": (body, 9),
@@ -1136,11 +1154,13 @@ def run_gui(settings: Settings, *, on_ready=None) -> None:
             root.title(f"DAPLink Flasher · {AUTHOR_INFO['name']}")
             asset_dir = BUNDLE_DIR / "assets"
             icon = asset_dir / "dap-flasher.ico"
-            if icon.is_file():
-                try:
-                    root.iconbitmap(default=str(icon))
-                except tk.TclError:
-                    pass
+            try:
+                root.iconbitmap(default=str(icon))
+            except tk.TclError:
+                # X11 takes PNG window icons, not .ico.
+                if (asset_dir / "dap-flasher-256.png").is_file():
+                    self.window_icon = tk.PhotoImage(file=str(asset_dir / "dap-flasher-256.png"))
+                    root.iconphoto(True, self.window_icon)
             root.configure(bg=T["bg"])
             root.geometry("1280x860")
             root.minsize(1060, 720)
@@ -1223,7 +1243,7 @@ def run_gui(settings: Settings, *, on_ready=None) -> None:
         def _startup_log(self) -> None:
             try:
                 exe, _ = find_openocd()
-                m = re.search(r"STM32CubeIDE_([\d.]+)", exe)
+                m = re.search(r"STM32CubeIDE_([\d.]+)", exe, re.IGNORECASE)
                 if Path(exe).is_relative_to(BUNDLE_DIR / "openocd"):
                     self._append("OpenOCD: bản đóng gói sẵn trong app", "ocd")
                 else:

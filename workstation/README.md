@@ -35,6 +35,31 @@ thư mục có dấu/khoảng trắng, bỏ Python khỏi PATH, mở với cấu
 tra tài nguyên và đóng bình thường. `--wsl` chỉ kiểm tra WSL đọc được các file
 giải nén và cú pháp helper; không liên lạc robot hay khởi chạy ROS/động cơ.
 
+## Bản Linux
+
+Gói `dist/linux/RPBot-Linux-x86_64.tar.gz` chứa RPBot Studio và DAPLink Flasher
+dạng file chạy độc lập cho PC Ubuntu 24.04 trở lên (x86_64). Bản Linux chạy ROS
+trực tiếp, không qua WSL: trang **Kết nối** chỉ còn địa chỉ Pi và tài khoản SSH,
+cấu hình/log ở `~/.local/state/RPBotConsole/`. Máy cần ROS 2 Jazzy có RViz,
+`ssh` và SSH key đến robot như bản Windows.
+
+```bash
+tar -xzf RPBot-Linux-x86_64.tar.gz && cd RPBot-Linux-x86_64
+./install.sh          # chép vào ~/.local/share/rpbot, thêm vào menu ứng dụng
+./install.sh --udev   # một lần, cho DAPLink Flasher mở mạch nạp không cần sudo
+```
+
+Build lại trên Ubuntu 24.04 (máy thật hoặc WSL), từ thư mục gốc repo:
+
+```bash
+sudo apt install python3-tk python3-venv binutils
+bash packaging/linux/build.sh
+```
+
+Script tự tạo môi trường build ở `~/.cache/rpbot-build-venv` (PyInstaller,
+hidapi), dùng chung hai file `.spec` với bản Windows và ghi gói vào `dist/linux/`.
+Build trên Ubuntu 24.04 nên file chạy cần glibc 2.39, tức Ubuntu 24.04 trở lên.
+
 ## Giao diện
 
 Chọn **Tiếng Việt / English** trên thanh đầu để đổi ngôn ngữ ngay khi đang mở.

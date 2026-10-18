@@ -1,0 +1,10 @@
+# DAPLink Flasher: let the logged-in desktop user open CMSIS-DAP probes without sudo.
+# Install with ./install.sh --udev, or copy to /etc/udev/rules.d/ and replug the probe.
+
+# Horco CMSIS-DAP V208 wireless DAPLink (PC master dongle)
+SUBSYSTEM=="usb", ATTR{idVendor}=="faed", ATTR{idProduct}=="4873", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="faed", ATTRS{idProduct}=="4873", MODE="0660", TAG+="uaccess"
+
+# Arm DAPLink / CMSIS-DAP reference firmware
+SUBSYSTEM=="usb", ATTR{idVendor}=="0d28", ATTR{idProduct}=="0204", MODE="0660", TAG+="uaccess"
+KERNEL=="hidraw*", ATTRS{idVendor}=="0d28", ATTRS{idProduct}=="0204", MODE="0660", TAG+="uaccess"

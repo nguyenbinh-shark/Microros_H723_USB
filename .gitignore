@@ -18,6 +18,9 @@ tools/*.exe
 # Standalone RPBot Studio desktop application; rebuild from workstation/*.spec.
 /workstation/dist/
 
+# Linux package of both apps; rebuild with packaging/linux/build.sh.
+/dist/
+
 # ==============================================================================
 # micro-ROS Prebuilt Static Libraries (Fetched via tools/fetch_libmicroros.sh)
 # ==============================================================================

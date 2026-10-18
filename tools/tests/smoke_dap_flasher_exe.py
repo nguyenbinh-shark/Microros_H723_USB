@@ -38,7 +38,7 @@ def main():
             checked += 1
     assert checked >= 39, 'Expected the complete working OpenOCD payload'
     assert any(name.startswith('hid.') and name.endswith('.pyd') for name in members), 'USB probe enumeration must remain available'
-    for name in ('dap-flasher.png', 'dap-flasher.ico'):
+    for name in ('dap-flasher.png', 'dap-flasher-256.png', 'dap-flasher.ico'):
         assert archive.extract(members['assets/' + name]) == (ROOT / 'tools' / 'assets' / name).read_bytes()
     assert not any(Path(name).name.lower() in ('settings.json', 'id_ed25519', 'id_rsa') for name in members)
 

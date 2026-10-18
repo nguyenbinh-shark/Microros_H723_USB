@@ -11,3 +11,4 @@ EMAIL = 'trannguyenbinh.shark@gmail.com'
 BIO = 'Cơ điện tử · Hệ thống điều khiển · Robotics'
 LOGO = ASSETS / 'rpbot-studio.png'  # 40 px header mark, drawn by tools/make_app_icons.py
 ICON = ASSETS / 'rpbot-studio.ico'
+ICON_PNG = ASSETS / 'rpbot-studio-256.png'  # Linux window and launcher icon

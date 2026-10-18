@@ -24,7 +24,7 @@ from preview_studio import capture_window
 
 FILES = ['map_library.py', 'robot_tasks.py', 'remote_ops.py', 'ros_session.py',
          'ros_session.sh', 'mapping.rviz', 'navigation.rviz',
-         'assets/rpbot-studio.png', 'assets/rpbot-studio.ico']
+         'assets/rpbot-studio.png', 'assets/rpbot-studio-256.png', 'assets/rpbot-studio.ico']
 
 
 def find_window(executable, title_contains='RPBot Studio'):

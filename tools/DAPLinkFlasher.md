@@ -33,6 +33,22 @@ không đổi các lựa chọn đã lưu, bộ phân tích image, lập kế ho
 phục hồi phiên hay lệnh kiểm tra động cơ. Lệnh kiểm tra nếu dùng WSL/SSH vẫn
 cần môi trường tương ứng như trước.
 
+## Bản Linux
+
+DAPLink Flasher nằm chung gói Linux với RPBot Studio
+(`dist/linux/RPBot-Linux-x86_64.tar.gz`, build bằng `packaging/linux/build.sh`,
+cách cài xem `workstation/README.md`). Khác bản Windows:
+
+- Không gói sẵn OpenOCD: cài `sudo apt install openocd`. App tìm theo thứ tự
+  `OPENOCD`, `openocd` trên PATH, rồi STM32CubeIDE ở `/opt/st/stm32cubeide_*`
+  hoặc `~/st/stm32cubeide_*`.
+- Quyền USB: `./install.sh --udev` cài `60-dap-flasher.rules` (Horco faed:4873
+  và Arm DAPLink 0d28:0204) rồi cắm lại mạch nạp; không cần chạy app bằng sudo.
+- Cấu hình ở `~/.config/dap_flasher/settings.json`. Tùy chọn đóng OpenOCD khác
+  dùng `pkill -x openocd` thay cho `taskkill`.
+- Quy tắc an toàn giữ nguyên: kiểm tra động cơ mặc định bật, chỉ dừng chip khi
+  MOTORS_ENABLED đã tắt.
+
 ## Đóng gói lại
 
 Trên máy build cần Python, PyInstaller 6.22.3, hidapi 0.15.0 và OpenOCD kèm

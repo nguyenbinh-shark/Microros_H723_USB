@@ -5,7 +5,8 @@
 
 RPBot Studio: top-down robot with LiDAR scan arcs on the studio's ink and blue.
 DAPLink Flasher: MCU chip with a flash bolt on the flasher's accent blue.
-Each app gets a multi-size .ico (window, taskbar, EXE) and a small .png for the header.
+Each app gets a multi-size .ico (Windows window, taskbar, EXE), a small .png for the header
+and a 256 px .png for the Linux window and launcher.
 """
 from pathlib import Path
 
@@ -88,7 +89,8 @@ def save(image, folder, name, mark_size, small=None):
     frames = [(small if small and size <= 24 else image).resize((size, size), Image.LANCZOS) for size in ICO_SIZES]
     frames[-1].save(folder / f'{name}.ico', sizes=[(s, s) for s in ICO_SIZES], append_images=frames[:-1])
     image.resize((mark_size, mark_size), Image.LANCZOS).save(folder / f'{name}.png', optimize=True)
-    print('wrote', folder / f'{name}.ico', folder / f'{name}.png')
+    frames[-1].save(folder / f'{name}-256.png', optimize=True)  # Linux window and launcher icon
+    print('wrote', folder / f'{name}.ico', folder / f'{name}.png', folder / f'{name}-256.png')
 
 
 if __name__ == '__main__':

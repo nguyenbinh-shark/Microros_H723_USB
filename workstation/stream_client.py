@@ -1,4 +1,4 @@
-"""Keep one WSL ROS subscriber alive; coalesce snapshots so the GUI never queues old frames."""
+"""Keep one PC-side ROS subscriber alive; coalesce snapshots so the GUI never queues old frames."""
 import json
 import subprocess
 import threading

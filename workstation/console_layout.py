@@ -1,4 +1,5 @@
 """Native desktop studio layout. All robot actions stay in rpbot_console."""
+import os
 import tkinter as tk
 from tkinter import ttk
 from tkinter.scrolledtext import ScrolledText
@@ -15,7 +16,8 @@ PAGES = (
     ('maps', '03', 'Bản đồ đã lưu', 'Bản đồ đã lưu', 'Chọn map để xem trước, tải về hoặc dùng cho Navigation.'),
     ('tasks', '04', 'Tác vụ', 'Tác vụ đang chạy', 'Xem phiên robot và dừng đúng tác vụ trong domain đã chọn.'),
     ('debug', '05', 'Debug', 'Debug · Dữ liệu & nhật ký', 'Kiểm tra tuổi bản tin, trạng thái chi tiết và log robot.'),
-    ('settings', '06', 'Kết nối', 'Kết nối robot', 'Địa chỉ Pi, tài khoản SSH và cấu hình WSL trên PC.'),
+    ('settings', '06', 'Kết nối', 'Kết nối robot', 'Địa chỉ Pi, tài khoản SSH và cấu hình WSL trên PC.'
+     if os.name == 'nt' else 'Địa chỉ Pi và tài khoản SSH.'),
     ('about', '07', 'Giới thiệu', 'RPBot Studio', 'Thông tin tác giả và liên hệ.'),
 )
 
@@ -171,6 +173,10 @@ def build_settings(app, page):
     app.ping_label.pack(fill='x', pady=(10, 0))
     line(page, pady=(12, 12))
     for key, title, detail in (('distro', 'Ubuntu / WSL', 'Bản phân phối có ROS 2 và RViz'), ('wsl_user', 'Tài khoản WSL', 'Người dùng chạy ROS trên PC')):
+        if os.name != 'nt':
+            # Linux runs ROS directly; keep the saved WSL values without showing them.
+            app.fields[key] = tk.StringVar(value=app.settings[key])
+            continue
         row = ttk.Frame(page)
         row.pack(fill='x', pady=(0, 13))
         labels = ttk.Frame(row)
@@ -221,8 +227,10 @@ def build(app):
     try:
         root.iconbitmap(default=str(brand.ICON))
     except tk.TclError:
-        if app.brand_logo:
-            root.iconphoto(True, app.brand_logo)
+        # X11 takes PNG window icons, not .ico.
+        if brand.ICON_PNG.is_file():
+            app.window_icon = tk.PhotoImage(file=str(brand.ICON_PNG))
+            root.iconphoto(True, app.window_icon)
     header = ttk.Frame(root, padding=(18, 8))
     header.pack(fill='x')
     if app.brand_logo:

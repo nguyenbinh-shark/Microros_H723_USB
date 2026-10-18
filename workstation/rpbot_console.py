@@ -1,4 +1,6 @@
-"""Small Windows launcher for an existing ROS 2 robot and WSL RViz."""
+"""Small desktop launcher for an existing ROS 2 robot and RViz.
+
+Windows runs the PC-side ROS tools in WSL; Linux runs them directly."""
 from datetime import datetime
 import json
 import os
@@ -8,6 +10,7 @@ import re
 import shlex
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -26,10 +29,18 @@ from map_library import map_name as validate_map_name
 from ui_language import Dialogs, Language, LANGUAGES
 
 HERE = Path(__file__).resolve().parent
-STATE = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "RPBotConsole"
+WINDOWS = os.name == "nt"
+STATE = (Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) if WINDOWS else
+         Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")) / "RPBotConsole"
 DEFAULTS = {"host": "", "user": "",
             "distro": "Ubuntu-24.04", "wsl_user": "shark"}
 HIDDEN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+if getattr(sys, "frozen", False) and not WINDOWS:
+    # The Linux build points LD_LIBRARY_PATH at its bundled libraries; ssh, bash
+    # and ROS must load the system ones.
+    os.environ.pop("LD_LIBRARY_PATH", None)
+    if "LD_LIBRARY_PATH_ORIG" in os.environ:
+        os.environ["LD_LIBRARY_PATH"] = os.environ.pop("LD_LIBRARY_PATH_ORIG")
 
 
 def wsl_path(path):
@@ -56,7 +67,15 @@ def validate_settings(settings):
     return settings
 
 
-def wsl_command(settings, *args):
+def host_path(path):
+    """A local file as the PC's ROS shell sees it."""
+    return wsl_path(path) if WINDOWS else Path(path).resolve().as_posix()
+
+
+def host_command(settings, *args):
+    """Run in the PC's ROS environment: the WSL distro on Windows, directly on Linux."""
+    if not WINDOWS:
+        return list(args)
     return ["wsl.exe", "-d", settings["distro"], "-u", settings["wsl_user"], "--", *args]
 
 
@@ -80,7 +99,7 @@ def remote(settings, action, *args, address=None):
         # original hostname for SSH config matching and host-key verification.
         host_options = ['-o', 'HostName=' + (address or resolve_robot_address(settings)),
                         '-o', 'HostKeyAlias=' + settings['host'].lower()]
-    return capture(wsl_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
+    return capture(host_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
                                "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
                                "-o", "ServerAliveCountMax=2",
                                *host_options, settings["user"] + "@" + settings["host"], command),
@@ -91,7 +110,7 @@ def remote(settings, action, *args, address=None):
 
 def resolve_robot_address(settings):
     return resolve_ipv4(settings['host'], fallback=lambda host: capture(
-        wsl_command(settings, 'getent', 'ahostsv4', host), timeout=5))
+        host_command(settings, 'getent', 'ahostsv4', host), timeout=5))
 
 
 def ping_robot(settings):
@@ -99,7 +118,7 @@ def ping_robot(settings):
 
 
 def session_args(settings, action, session, *, address=None):
-    command = wsl_command(settings, "bash", wsl_path(HERE / "ros_session.sh"),
+    command = host_command(settings, "bash", host_path(HERE / "ros_session.sh"),
                           action, "--domain", str(session["domain"]))
     profile = STATE / "fastdds.xml"
     xml = pc_profile(session.get("profile_xml", ""), address or resolve_robot_address(settings), session["domain"])
@@ -108,7 +127,7 @@ def session_args(settings, action, session, *, address=None):
         file.write(xml)
         temporary = file.name
     os.replace(temporary, profile)
-    command += ["--profile", wsl_path(profile)]
+    command += ["--profile", host_path(profile)]
     return command
 
 
@@ -836,7 +855,11 @@ class Console:
         self.root.destroy()
 
     def open_logs(self):
-        os.startfile(STATE)
+        if WINDOWS:
+            os.startfile(STATE)
+        else:
+            subprocess.Popen(["xdg-open", str(STATE)], stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     def tab_changed(self, event=None):
         if self.tabs.select() == str(self.tab_frames['tasks']):
@@ -1095,7 +1118,8 @@ def create_root():
             ctypes.windll.shcore.SetProcessDpiAwareness(1)
         except (AttributeError, OSError):
             pass
-    return tk.Tk()
+    # The class name is the Linux WM_CLASS, matched by the launcher's StartupWMClass.
+    return tk.Tk(className="RPBotStudio")
 
 
 def main():

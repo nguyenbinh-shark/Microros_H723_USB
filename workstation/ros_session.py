@@ -115,8 +115,8 @@ def main():
             config = Path(__file__).with_name("navigation.rviz")
         rviz = shutil.which("rviz2")
         if not rviz:
-            raise RuntimeError("Install ros-jazzy-rviz2 in the PC WSL distro")
-        # Prevent duplicate viewers when the Windows console is reopened.
+            raise RuntimeError("Install ros-jazzy-rviz2 on the PC (in the WSL distro on Windows)")
+        # Prevent duplicate viewers when the console is reopened.
         lock = open(f"/tmp/rpbot-rviz-{os.getuid()}-{args.domain}-{args.action}.lock", "w")
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
