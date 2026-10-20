@@ -272,5 +272,8 @@ class PickTests(unittest.TestCase):
             view.motion(event(20, 40))
             view.release(event(20, 40))             # dragged up = north
             self.assertEqual(picked, [(-1.0, 0.0, round(math.pi / 2, 3))])
+            view.press(event(20, 80))
+            view.release(event(21, 80))             # a click without a drag sends nothing
+            self.assertEqual(len(picked), 1)
         finally:
             root.destroy()

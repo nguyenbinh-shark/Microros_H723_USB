@@ -52,10 +52,14 @@ class LiveMapView:
             return
         x0, y0 = self.drag[:2]
         self.drag = None
-        # Canvas y grows downwards, map y upwards. A click without a drag keeps yaw 0 (east).
-        yaw = math.atan2(-(event.y - y0), event.x - x0) if math.dist((x0, y0), (event.x, event.y)) > 6 else 0.0
-        x, y = self.to_map(x0, y0)
         self.draw()
+        if math.dist((x0, y0), (event.x, event.y)) <= 6:
+            # A heading guessed as 0 put AMCL's laser on the wrong walls (2026-10-20).
+            self.info.set("Nhấn rồi KÉO theo hướng mũi xe để chọn hướng — chưa gửi gì.")
+            return
+        # Canvas y grows downwards, map y upwards.
+        yaw = math.atan2(-(event.y - y0), event.x - x0)
+        x, y = self.to_map(x0, y0)
         self.on_pick(round(x, 2), round(y, 2), round(yaw, 3))
 
     def set_marker(self, name, pose=None, colour="#1fa34a"):
