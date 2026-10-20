@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 from pathlib import Path
 import sys
 import tempfile
@@ -194,3 +195,57 @@ class ExploreTests(unittest.TestCase):
             self.assertIn("--setenv=ROS_DOMAIN_ID=0", unit)
             self.assertEqual(unit[-1], "true")
             self.assertIn("explore.launch.py", (home / ".local/share/rpbot-console/explore.sh").read_text())
+
+
+class NavTests(unittest.TestCase):
+    def test_switch_saves_the_live_map_and_stops_mapping_before_starting_nav(self):
+        import subprocess
+        import remote_ops
+        calls = []
+        sessions = [[{"mode": "mapping", "pid": 7, "domain": 0, "simulated_time": False}], [], []]
+        def run(command, **kwargs):
+            calls.append(" ".join(command[:4]))
+            return subprocess.CompletedProcess(command, 0, "", "")
+        with patch.object(remote_ops, "launches", side_effect=lambda: sessions.pop(0) if sessions else []), \
+             patch.object(remote_ops, "run", run), \
+             patch.object(remote_ops, "autosave", side_effect=lambda: calls.append("autosave") or {"autosave": "a"}), \
+             patch.object(remote_ops, "stop_explore", side_effect=lambda: calls.append("explore-stop") or {}), \
+             patch.object(remote_ops, "start_navigation",
+                          side_effect=lambda *a: calls.append("start-nav") or {"status": "started"}):
+            report = remote_ops.nav_switch("room_1", "rev", 0)
+        self.assertEqual(calls, ["systemctl --user is-active rpbot-mapping.service", "autosave", "explore-stop",
+                                 "systemctl --user stop rpbot-mapping.service", "start-nav"])
+        self.assertEqual(report["saved"], {"autosave": "a"})
+
+    def test_pose_and_goal_need_a_running_nav_and_finite_numbers(self):
+        import remote_ops
+        with patch.object(remote_ops, "launches", return_value=[]):
+            with self.assertRaises(RuntimeError):
+                remote_ops.nav_command("goal", 0, 1.0, 2.0, 0.0)
+        with self.assertRaises(ValueError):
+            remote_ops.nav_command("goal", 0, float("nan"), 0.0, 0.0)
+        with self.assertRaises(ValueError):
+            remote_ops.nav_command("drive", 0)
+
+
+class PickTests(unittest.TestCase):
+    def test_press_and_drag_picks_map_coordinates_and_heading(self):
+        import tkinter as tk
+        from live_map_view import LiveMapView
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            view = LiveMapView(root)
+            picked = []
+            view.on_pick = lambda *pose: picked.append(pose)
+            png = base64.b64encode(render_occupancy([0] * 100, 10, 10)[0]).decode()
+            view.update(dict(png_b64=png, resolution=0.5, origin=[-2.0, -1.0], width=10, height=10, path=[]))
+            view.draw = lambda: None                 # keep a fixed scale for the check
+            view.transform = (0, 0, 10, view.map)   # 10 canvas px per image pixel
+            event = lambda x, y: type("E", (), {"x": x, "y": y})()
+            view.press(event(20, 80))               # image pixel (2, 8): x=-1.0, y=0.0
+            view.motion(event(20, 40))
+            view.release(event(20, 40))             # dragged up = north
+            self.assertEqual(picked, [(-1.0, 0.0, round(math.pi / 2, 3))])
+        finally:
+            root.destroy()

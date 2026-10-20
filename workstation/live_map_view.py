@@ -1,5 +1,6 @@
 """Map view for the lite stream: a small PNG rendered on the Pi, with the robot
-pose and its path drawn on top. Display only; it sends nothing to the robot."""
+pose and its path drawn on top. It sends nothing to the robot itself: with
+`on_pick` set, a press-and-drag picks a map pose (x, y, yaw) for the caller."""
 import math
 import time
 import tkinter as tk
@@ -22,6 +23,47 @@ class LiveMapView:
         self.pose = None
         self.received = None
         self.waiting = "Đang chờ ảnh bản đồ từ Pi\n(cập nhật khoảng 2 giây một lần)"
+        self.transform = None
+        self.markers = {}   # name -> (x, y, yaw, colour) in map metres
+        self.on_pick = None  # callback(x, y, yaw) after press + drag + release
+        self.drag = None
+        self.canvas.bind("<ButtonPress-1>", self.press)
+        self.canvas.bind("<B1-Motion>", self.motion)
+        self.canvas.bind("<ButtonRelease-1>", self.release)
+
+    def to_map(self, cx, cy):
+        left, top, scale, live = self.transform
+        column, row = (cx - left) / scale, (cy - top) / scale
+        return (live["origin"][0] + column * live["resolution"],
+                live["origin"][1] + (live["height"] - row) * live["resolution"])
+
+    def press(self, event):
+        if self.on_pick and self.transform:
+            self.drag = (event.x, event.y, event.x, event.y)
+            self.draw()
+
+    def motion(self, event):
+        if self.drag:
+            self.drag = self.drag[:2] + (event.x, event.y)
+            self.draw()
+
+    def release(self, event):
+        if not self.drag:
+            return
+        x0, y0 = self.drag[:2]
+        self.drag = None
+        # Canvas y grows downwards, map y upwards. A click without a drag keeps yaw 0 (east).
+        yaw = math.atan2(-(event.y - y0), event.x - x0) if math.dist((x0, y0), (event.x, event.y)) > 6 else 0.0
+        x, y = self.to_map(x0, y0)
+        self.draw()
+        self.on_pick(round(x, 2), round(y, 2), round(yaw, 3))
+
+    def set_marker(self, name, pose=None, colour="#1fa34a"):
+        if pose is None:
+            self.markers.pop(name, None)
+        else:
+            self.markers[name] = (*pose, colour)
+        self.draw()
 
     def update(self, live_map=None, pose=None):
         if live_map is not None and live_map is not self.map:
@@ -44,6 +86,7 @@ class LiveMapView:
         canvas.delete("all")
         width, height = max(1, canvas.winfo_width()), max(1, canvas.winfo_height())
         if self.image is None:
+            self.transform = None
             canvas.create_text(width / 2, height / 2, text=self.waiting,
                                fill="#aaa9ad", font=("Segoe UI", 10), justify="center", width=max(80, width - 30))
             return
@@ -62,10 +105,20 @@ class LiveMapView:
         left, top = (width - image_w * scale) / 2, (height - image_h * scale) / 2
         canvas.create_image(left, top, anchor="nw", image=self.shown)
         live = self.map
+        self.transform = (left, top, scale, live)
         def to_canvas(x, y):
             column = (x - live["origin"][0]) / live["resolution"]
             row = live["height"] - (y - live["origin"][1]) / live["resolution"]
             return left + column * scale, top + row * scale
+        for x, y, yaw, colour in self.markers.values():
+            cx, cy = to_canvas(x, y)
+            canvas.create_oval(cx - 7, cy - 7, cx + 7, cy + 7, outline=colour, width=3)
+            canvas.create_line(cx, cy, cx + 20 * math.cos(yaw), cy - 20 * math.sin(yaw),
+                               fill=colour, width=3, arrow="last")
+        if self.drag:
+            x0, y0, x1, y1 = self.drag
+            canvas.create_oval(x0 - 6, y0 - 6, x0 + 6, y0 + 6, outline="#e0a100", width=3)
+            canvas.create_line(x0, y0, x1, y1, fill="#e0a100", width=3, arrow="last")
         points = [coordinate for x, y in live.get("path", []) for coordinate in to_canvas(x, y)]
         if len(points) >= 4:
             canvas.create_line(*points, fill="#4aa3ff", width=2)

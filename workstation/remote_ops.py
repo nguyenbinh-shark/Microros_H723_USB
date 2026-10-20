@@ -66,6 +66,148 @@ finally:
 '''
 
 
+NAV_PROGRAM = r'''
+import json
+import math
+import sys
+import time
+import rclpy
+
+action, x, y, yaw = sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), float(sys.argv[4])
+rclpy.init()
+node = rclpy.create_node('rpbot_nav_command')
+
+def place(pose):
+    pose.position.x, pose.position.y = x, y
+    pose.orientation.z, pose.orientation.w = math.sin(yaw / 2), math.cos(yaw / 2)
+
+try:
+    if action == 'pose':
+        from geometry_msgs.msg import PoseWithCovarianceStamped
+        publisher = node.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
+        deadline = time.monotonic() + 6
+        while not publisher.get_subscription_count() and time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.1)
+        if not publisher.get_subscription_count():
+            raise RuntimeError('AMCL is not running (nobody subscribes /initialpose); start Nav first')
+        message = PoseWithCovarianceStamped()
+        message.header.frame_id = 'map'
+        place(message.pose.pose)
+        covariance = [0.0] * 36
+        covariance[0] = covariance[7] = 0.25   # 0.5 m
+        covariance[35] = 0.0685                # 15 deg
+        message.pose.covariance = covariance
+        for _ in range(3):
+            message.header.stamp = node.get_clock().now().to_msg()
+            publisher.publish(message)
+            rclpy.spin_once(node, timeout_sec=0.2)
+        print(json.dumps({'initial_pose': [x, y, yaw]}))
+    elif action == 'goal':
+        from rclpy.action import ActionClient
+        from nav2_msgs.action import NavigateToPose
+        client = ActionClient(node, NavigateToPose, '/navigate_to_pose')
+        if not client.wait_for_server(timeout_sec=8.0):
+            raise RuntimeError('Nav2 is not ready (navigate_to_pose); wait or set the initial pose')
+        goal = NavigateToPose.Goal()
+        goal.pose.header.frame_id = 'map'
+        goal.pose.header.stamp = node.get_clock().now().to_msg()
+        place(goal.pose.pose)
+        future = client.send_goal_async(goal)
+        rclpy.spin_until_future_complete(node, future, timeout_sec=10.0)
+        handle = future.result() if future.done() else None
+        if handle is None or not handle.accepted:
+            raise RuntimeError('Nav2 rejected the goal')
+        # Nav2 keeps executing after this client exits; the lite stream reports progress.
+        print(json.dumps({'goal': [x, y, yaw], 'accepted': True}))
+    elif action == 'cancel':
+        from action_msgs.srv import CancelGoal
+        client = node.create_client(CancelGoal, '/navigate_to_pose/_action/cancel_goal')
+        if not client.wait_for_service(timeout_sec=5.0):
+            raise RuntimeError('Nav2 is not running; nothing to cancel')
+        # A zero goal id and zero stamp cancel every goal.
+        future = client.call_async(CancelGoal.Request())
+        rclpy.spin_until_future_complete(node, future, timeout_sec=8.0)
+        if not future.done() or future.result() is None:
+            raise RuntimeError('Cancel timed out; stop with the RC switch A (MANUAL) or F')
+        print(json.dumps({'cancelled': len(future.result().goals_canceling)}))
+    else:
+        raise ValueError('Unknown nav command')
+finally:
+    node.destroy_node()
+    rclpy.shutdown()
+'''
+
+
+def nav_command(action, domain, x=0.0, y=0.0, yaw=0.0):
+    """Initial pose, goal or cancel for Nav2, sent from the Pi itself (no DDS over 4G)."""
+    import math
+    if not 0 <= domain <= 232:
+        raise ValueError("Invalid ROS domain")
+    if action not in ("pose", "goal", "cancel"):
+        raise ValueError("Unknown nav command")
+    if not all(math.isfinite(value) and abs(value) < 10000 for value in (x, y, yaw)):
+        raise ValueError("Invalid pose")
+    if action != "cancel" and not [item for item in launches()
+                                   if item["mode"] == "navigation" and item["domain"] == domain]:
+        raise RuntimeError("Nav is not running in this domain; start Nav on a saved map first")
+    env = dict(os.environ, ROS_DOMAIN_ID=str(domain), RMW_IMPLEMENTATION="rmw_fastrtps_cpp")
+    result = run(['bash', '-c', 'source "$1/scripts/env.sh" >/dev/null && exec python3 -c "$2" "${@:3}"',
+                  'rpbot-nav', str(ROOT), NAV_PROGRAM, action, repr(float(x)), repr(float(y)), repr(float(yaw))],
+                 env=env)
+    if result.returncode:
+        lines = (result.stderr or result.stdout).strip().splitlines()
+        raise RuntimeError(lines[-1] if lines else "Nav command failed")
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def wait_no_launches(seconds=40):
+    import time
+    deadline = time.monotonic() + seconds
+    while launches():
+        if time.monotonic() > deadline:
+            raise RuntimeError("The previous session did not stop within %d s" % seconds)
+        time.sleep(1)
+
+
+def nav_switch(name, revision, domain):
+    """Leave mapping for Nav on a saved map. The live LiDAR map is autosaved first."""
+    report = {}
+    current = launches()
+    mapping = [item for item in current if item["mode"] == "mapping"]
+    if mapping:
+        if run(["systemctl", "--user", "is-active", SERVICE]).returncode:
+            raise RuntimeError("Mapping was not started by RPBot; stop it yourself first")
+        report["saved"] = autosave()
+        report["explore"] = stop_explore()
+        result = run(["systemctl", "--user", "stop", SERVICE])
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+        wait_no_launches()
+    report.update(start_navigation(name, revision, domain))
+    return report
+
+
+def nav_stop(resume_mapping):
+    """Stop the Nav service (the cmd_vel watchdog stops the wheels); optionally map again."""
+    report = {}
+    if run(["systemctl", "--user", "is-active", NAV_SERVICE]).returncode == 0:
+        result = run(["systemctl", "--user", "stop", NAV_SERVICE])
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+        report["navigation"] = "stopped"
+    elif [item for item in launches() if item["mode"] == "navigation"]:
+        raise RuntimeError("Nav was not started by RPBot; stop it yourself")
+    else:
+        report["navigation"] = "inactive"
+    if resume_mapping:
+        wait_no_launches()
+        result = run(["systemctl", "--user", "start", SERVICE])
+        if result.returncode:
+            raise RuntimeError(result.stderr)
+        report["mapping"] = "started"
+    return report
+
+
 def reset_mapping(domain, pid, *, inspect=False):
     live = [item for item in launches() if item["domain"] == domain
             and item["mode"] == "mapping" and not item["simulated_time"]]
@@ -496,8 +638,13 @@ def main():
     parser.add_argument("action", choices=("status", "save", "reset", "reset-info", "logs", "start", "stop", "install-autostart",
                                            "maps", "map-preview", "map-export", "map-rename", "map-delete", "tasks", "stop-tasks", "start-nav",
                                            "install-ops", "autosave", "lite-stream", "explore-start", "explore-stop",
+                                           "nav-switch", "nav-stop", "nav-pose", "nav-goal", "nav-cancel",
                                            *FLOOR_ACTIONS))
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--resume-mapping", action="store_true")
+    parser.add_argument("--x", type=float, default=0.0)
+    parser.add_argument("--y", type=float, default=0.0)
+    parser.add_argument("--yaw", type=float, default=0.0)
     parser.add_argument("--level", type=int)
     parser.add_argument("--map3d")
     parser.add_argument("--label")
@@ -514,6 +661,12 @@ def main():
         parser.error("Invalid ROS domain")
     if args.action == 'start-nav':
         print(json.dumps(start_navigation(args.name, args.revision, args.domain)))
+    elif args.action == "nav-switch":
+        print(json.dumps(nav_switch(args.name, args.revision, args.domain)))
+    elif args.action == "nav-stop":
+        print(json.dumps(nav_stop(args.resume_mapping)))
+    elif args.action in ("nav-pose", "nav-goal", "nav-cancel"):
+        print(json.dumps(nav_command(args.action[4:], args.domain, args.x, args.y, args.yaw)))
     elif args.action == "install-ops":
         print(json.dumps(install_ops(OPS_PAYLOAD)))
     elif args.action == "autosave":

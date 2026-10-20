@@ -27,6 +27,7 @@ PATH_POINTS = 2000
 TILE = 64
 FULL_EVERY_S = 120  # a full image now and then, so a viewer that missed a delta recovers
 UNKNOWN = 205
+GOAL_STATES = {1: "accepted", 2: "executing", 3: "canceling", 4: "succeeded", 5: "canceled", 6: "aborted"}
 
 
 def occupancy_image(values, width, height, max_side=MAP_MAX_SIDE, origin=(0.0, 0.0), resolution=1.0):
@@ -169,6 +170,27 @@ class LiteExtension:
         def received(msg):
             self.map, self.map_seq = msg, self.map_seq + 1
         self.subscription = node.create_subscription(OccupancyGrid, "/map", received, latched)
+        self.nav = None
+        try:
+            from action_msgs.msg import GoalStatusArray
+            from nav2_msgs.action import NavigateToPose
+        except ImportError:
+            return
+        def status(msg):
+            if msg.status_list:
+                latest = max(msg.status_list, key=lambda item: (item.goal_info.stamp.sec, item.goal_info.stamp.nanosec))
+                state = GOAL_STATES.get(latest.status, "unknown")
+                if self.nav is None or self.nav.get("state") != state:
+                    self.nav = {"state": state}
+        def feedback(msg):
+            if self.nav is not None and self.nav.get("state") in ("accepted", "executing"):
+                self.nav.update(distance=round(msg.feedback.distance_remaining, 2),
+                                eta=msg.feedback.estimated_time_remaining.sec,
+                                recoveries=msg.feedback.number_of_recoveries)
+        self.nav_subscriptions = (
+            node.create_subscription(GoalStatusArray, "/navigate_to_pose/_action/status", status, latched),
+            node.create_subscription(NavigateToPose.Impl.FeedbackMessage, "/navigate_to_pose/_action/feedback",
+                                     feedback, 10))
 
     def pose(self):
         import rclpy
@@ -185,6 +207,8 @@ class LiteExtension:
         if now - self.uplink_at > 5:
             self.uplink, self.uplink_at = uplink(), now
         data["uplink"] = self.uplink
+        if getattr(self, "nav", None):
+            data["nav"] = self.nav
         pose = self.pose()
         data["pose"] = pose
         if pose and (not self.path or math.dist(self.path[-1], (pose["x"], pose["y"])) >= PATH_STEP_M):
