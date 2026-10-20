@@ -10,7 +10,8 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import rpbot_console
-from lite_stream import render_occupancy
+import lite_stream
+from lite_stream import LiveMapAssembler, LiteExtension, render_occupancy
 from map_library import export_bundle
 from remote_ops import classify_uplink
 from stream_client import TelemetryStream
@@ -51,6 +52,55 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(pixels[1][0], 0)    # occupied, now in the bottom PNG row
         self.assertEqual(pixels[0][3], 254)  # free, top PNG row
         self.assertEqual(pixels[0][0], 205)  # unknown
+
+
+class FakeMap:
+    def __init__(self, cells, width, height, x, y, resolution=0.05):
+        from types import SimpleNamespace
+        self.data = cells
+        self.info = SimpleNamespace(width=width, height=height, resolution=resolution,
+                                    origin=SimpleNamespace(position=SimpleNamespace(x=x, y=y)))
+
+
+class TileDeltaTests(unittest.TestCase):
+    def grid(self, width, height, walls):
+        cells = [-1 & 0xff] * (width * height)
+        for column, row in walls:
+            cells[row * width + column] = 100
+        return cells
+
+    def expected(self, fake):
+        info = fake.info
+        image, _, _, _ = lite_stream.occupancy_image(fake.data, info.width, info.height, lite_stream.MAP_MAX_SIDE,
+                                                     (info.origin.position.x, info.origin.position.y), info.resolution)
+        return image.tobytes()
+
+    def test_tiles_and_map_growth_rebuild_the_same_image_on_the_pc(self):
+        extension, assembler = LiteExtension(), LiveMapAssembler()
+        extension.path, extension.path_total = [(0.0, 0.0)], 1
+        extension.map = FakeMap(self.grid(200, 150, [(10, 10)]), 200, 150, -5.0, -3.0)
+        first = extension.map_update(0.0)
+        self.assertIn("png_b64", first)
+        assembler.feed(first)
+        # The robot drives on: one new wall far away and SLAM grows the map left and up.
+        extension.path, extension.path_total = [(0.0, 0.0), (0.3, 0.0)], 2
+        cells = self.grid(260, 190, [(70, 10), (250, 180)])
+        extension.map = FakeMap(cells, 260, 190, -8.0, -3.0)
+        delta = extension.map_update(5.0)
+        self.assertNotIn("png_b64", delta)
+        self.assertEqual(delta["shift"], [60, 40])
+        self.assertLess(len(delta["tiles"]), 6)
+        self.assertEqual(delta["path_add"], [[0.3, 0.0]])
+        rebuilt = assembler.feed(delta)
+        width, height, pixels = lite_stream.png_gray_pixels(base64.b64decode(rebuilt["png_b64"]))
+        self.assertEqual((width, height), (260, 190))
+        self.assertEqual(bytes(pixels), self.expected(extension.map))
+        self.assertEqual(rebuilt["path"], [[0.0, 0.0], [0.3, 0.0]])
+        self.assertEqual(rebuilt["origin"], [-8.0, -3.0])
+        # An unchanged map sends nothing; a missed delta waits for the next full image.
+        self.assertIsNone(extension.map_update(10.0))
+        self.assertIsNone(LiveMapAssembler().feed(delta))
+        self.assertIn("png_b64", extension.map_update(10.0 + lite_stream.FULL_EVERY_S))
 
 
 class SyncTests(unittest.TestCase):
@@ -95,7 +145,9 @@ class BundleTests(unittest.TestCase):
 class StreamLiveMapTests(unittest.TestCase):
     def test_last_map_image_is_kept_while_later_frames_have_none(self):
         with tempfile.TemporaryDirectory() as directory:
-            code = ("import json,sys; print(json.dumps({'topics': {}, 'live_map': {'png_b64': 'x'}}), flush=True);"
+            png = base64.b64encode(render_occupancy([0] * 4, 2, 2)[0]).decode()
+            full = dict(png_b64=png, resolution=0.05, origin=[0, 0], width=2, height=2, seq=1)
+            code = ("import json,sys; print(json.dumps({'topics': {}, 'live_map': %r}), flush=True);" % full +
                     "print(json.dumps({'topics': {}, 'pose': {'x': 1}}), flush=True); sys.stdin.readline()")
             stream = TelemetryStream([sys.executable, "-u", "-c", code], Path(directory) / "s.log")
             try:
@@ -104,7 +156,8 @@ class StreamLiveMapTests(unittest.TestCase):
                     time.sleep(0.01)
                 data, _, _ = stream.snapshot()
                 self.assertNotIn("live_map", data)
-                self.assertEqual(stream.live(), ({"png_b64": "x"}, 1))
+                live, count = stream.live()
+                self.assertEqual((live["png_b64"], live["width"], count), (png, 2, 1))
             finally:
                 stream.close()
                 stream.reader.join(timeout=2)

@@ -99,7 +99,8 @@ def ssh_command(settings, command, *, address=None):
         # original hostname for SSH config matching and host-key verification.
         host_options = ['-o', 'HostName=' + (address or resolve_robot_address(settings)),
                         '-o', 'HostKeyAlias=' + settings['host'].lower()]
-    return host_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
+    # Compression: the JSON telemetry and helper sources shrink ~9x on a 4G uplink.
+    return host_command(settings, "ssh", "-T", "-o", "BatchMode=yes", "-o", "Compression=yes",
                         "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
                         "-o", "ServerAliveCountMax=2",
                         *host_options, settings["user"] + "@" + settings["host"], command)

@@ -4,6 +4,8 @@ import subprocess
 import threading
 import time
 
+from lite_stream import LiveMapAssembler
+
 
 class TelemetryStream:
     def __init__(self, command, log_path, *, creationflags=0):
@@ -13,6 +15,7 @@ class TelemetryStream:
         # The lite stream sends a map image only every few seconds; keep the last one.
         self.live_map = None
         self.live_maps = 0
+        self.assembler = LiveMapAssembler()  # tile deltas back to full images
         self.lock = threading.Lock()
         self.log = open(log_path, "a", encoding="utf-8")
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -31,6 +34,11 @@ class TelemetryStream:
                 except ValueError:
                     continue
                 live_map = snapshot.pop("live_map", None)
+                if live_map:
+                    try:
+                        live_map = self.assembler.feed(live_map)
+                    except (KeyError, TypeError, ValueError):
+                        live_map = None
                 with self.lock:
                     self.latest, self.updated = snapshot, time.monotonic()
                     self.frames += 1
