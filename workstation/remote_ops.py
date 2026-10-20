@@ -328,6 +328,12 @@ def nav_switch(name, revision, domain):
     report = {}
     initial = None
     current = launches()
+    if [item for item in current if item["mode"] == "navigation"]:
+        # Nav on another map (or a restart on the same one): stop it first. Its pose
+        # keeper has written the last pose, so the same map can resume from there.
+        report["previous_nav"] = nav_stop(False)
+        wait_no_launches()
+        current = launches()
     mapping = [item for item in current if item["mode"] == "mapping"]
     if mapping:
         if run(["systemctl", "--user", "is-active", SERVICE]).returncode:

@@ -258,6 +258,14 @@ class NavTests(unittest.TestCase):
             self.assertEqual(pose and pose["source"], expected)
             self.assertEqual(report["initial_pose"], pose)
 
+    def test_switching_maps_stops_the_running_nav_first(self):
+        import remote_ops
+        order = []
+        sessions = [[{"mode": "navigation", "pid": 9, "domain": 0, "simulated_time": False}], [], []]
+        with patch.object(remote_ops, "launches", side_effect=lambda: sessions.pop(0) if sessions else []),              patch.object(remote_ops, "nav_stop", side_effect=lambda resume: order.append("nav-stop") or {}),              patch.object(remote_ops, "last_pose", return_value=None),              patch.object(remote_ops, "start_navigation", side_effect=lambda *a: order.append("start-nav") or {}):
+            remote_ops.nav_switch("autosave_20261020_1855", "rev", 0)
+        self.assertEqual(order, ["nav-stop", "start-nav"])
+
     def test_kept_pose_is_only_used_for_its_own_map(self):
         import remote_ops
         with tempfile.TemporaryDirectory() as folder, patch.object(remote_ops, "LAST_POSE", Path(folder, "p.json")):
