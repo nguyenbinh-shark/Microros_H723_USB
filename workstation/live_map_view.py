@@ -21,7 +21,7 @@ class LiveMapView:
         self.shown, self.shown_key = None, None
         self.pose = None
         self.received = None
-        self.waiting = "Đang chờ ảnh bản đồ từ Pi\n(cập nhật khoảng 5 giây một lần)"
+        self.waiting = "Đang chờ ảnh bản đồ từ Pi\n(cập nhật khoảng 2 giây một lần)"
 
     def update(self, live_map=None, pose=None):
         if live_map is not None and live_map is not self.map:

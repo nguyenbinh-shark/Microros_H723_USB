@@ -20,7 +20,7 @@ if "png_gray" not in globals():
 if "uplink" not in globals():
     from remote_ops import uplink
 
-MAP_PERIOD_S = 5.0
+MAP_PERIOD_S = 2.0  # slam_toolbox map_update_interval; tile deltas keep this cheap
 MAP_MAX_SIDE = 480
 PATH_STEP_M = 0.25
 PATH_POINTS = 2000
@@ -243,7 +243,7 @@ def main():
     os.environ["ROS_DOMAIN_ID"] = str(args.domain)
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     from ros_session import probe
-    probe(0, stream=True, interval=1.0, extension=LiteExtension())
+    probe(0, stream=True, interval=0.5, extension=LiteExtension())
 
 
 if __name__ == "__main__":
