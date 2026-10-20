@@ -183,6 +183,9 @@ def nav_switch(name, revision, domain):
         if result.returncode:
             raise RuntimeError(result.stderr)
         wait_no_launches()
+        if report["saved"].get("autosave") == name:
+            # The chosen map is this session's autosave, just refreshed: Nav takes the newest copy.
+            revision = map_bundle(ROOT / "maps", name)[0]["revision"]
     report.update(start_navigation(name, revision, domain))
     return report
 

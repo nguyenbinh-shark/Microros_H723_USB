@@ -217,6 +217,15 @@ class NavTests(unittest.TestCase):
                                  "systemctl --user stop rpbot-mapping.service", "start-nav"])
         self.assertEqual(report["saved"], {"autosave": "a"})
 
+    def test_switch_to_this_sessions_autosave_takes_its_new_revision(self):
+        import subprocess
+        import remote_ops
+        sessions = [[{"mode": "mapping", "pid": 7, "domain": 0, "simulated_time": False}], [], []]
+        started = []
+        with patch.object(remote_ops, "launches", side_effect=lambda: sessions.pop(0) if sessions else []),              patch.object(remote_ops, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),              patch.object(remote_ops, "autosave", return_value={"autosave": "autosave_20261020_1502"}),              patch.object(remote_ops, "stop_explore", return_value={}),              patch.object(remote_ops, "map_bundle", return_value=({"revision": "new"},)),              patch.object(remote_ops, "start_navigation", side_effect=lambda *a: started.append(a) or {}):
+            remote_ops.nav_switch("autosave_20261020_1502", "old", 0)
+        self.assertEqual(started, [("autosave_20261020_1502", "new", 0)])
+
     def test_pose_and_goal_need_a_running_nav_and_finite_numbers(self):
         import remote_ops
         with patch.object(remote_ops, "launches", return_value=[]):
