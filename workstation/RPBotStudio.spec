@@ -7,7 +7,7 @@ WINDOWS = sys.platform == 'win32'
 root = Path(SPECPATH)
 # Explicit allowlist: no PC settings, logs, SSH material, or firmware artifacts.
 runtime_files = [
-    'map_library.py', 'robot_tasks.py', 'remote_ops.py',
+    'map_library.py', 'robot_tasks.py', 'remote_ops.py', 'lite_stream.py',
     'ros_session.py', 'ros_session.sh', 'mapping.rviz', 'navigation.rviz',
 ]
 datas = [(str(root / name), '.') for name in runtime_files]

@@ -8,6 +8,7 @@ from pathlib import Path
 import queue
 import re
 import shlex
+import shutil
 import socket
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from tkinter.scrolledtext import ScrolledText
 from tkinter import filedialog, simpledialog
 import base64
 import hashlib
+import ipaddress
 from console_layout import build as build_layout
 from stream_client import TelemetryStream
 from connection_state import ConnectionState
@@ -90,22 +92,43 @@ def capture(command, *, input=None, timeout=45):
     return result.stdout.strip()
 
 
-def remote(settings, action, *args, address=None):
-    # Only known actions; arguments are POSIX quoted before SSH passes them to a shell.
-    command = shlex.join(["python3", "-", action, *args])
+def ssh_command(settings, command, *, address=None):
     host_options = []
     if settings['host'].lower().endswith('.local'):
         # Windows can resolve mDNS even when WSL's resolver cannot. Keep the
         # original hostname for SSH config matching and host-key verification.
         host_options = ['-o', 'HostName=' + (address or resolve_robot_address(settings)),
                         '-o', 'HostKeyAlias=' + settings['host'].lower()]
-    return capture(host_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
-                               "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
-                               "-o", "ServerAliveCountMax=2",
-                               *host_options, settings["user"] + "@" + settings["host"], command),
-                   input=(HERE / "map_library.py").read_text(encoding="utf-8") + "\n" +
+    return host_command(settings, "ssh", "-T", "-o", "BatchMode=yes",
+                        "-o", "ConnectTimeout=5", "-o", "ServerAliveInterval=5",
+                        "-o", "ServerAliveCountMax=2",
+                        *host_options, settings["user"] + "@" + settings["host"], command)
+
+
+def remote(settings, action, *args, address=None, timeout=45, payload=None):
+    # Only known actions; arguments are POSIX quoted before SSH passes them to a shell.
+    command = shlex.join(["python3", "-", action, *args])
+    prefix = f"OPS_PAYLOAD = {payload!r}\n" if payload else ""
+    return capture(ssh_command(settings, command, address=address),
+                   input=prefix + (HERE / "map_library.py").read_text(encoding="utf-8") + "\n" +
                          (HERE / "robot_tasks.py").read_text(encoding="utf-8") + "\n" +
-                         (HERE / "remote_ops.py").read_text(encoding="utf-8"))
+                         (HERE / "remote_ops.py").read_text(encoding="utf-8"), timeout=timeout)
+
+
+# Installed on the Pi: the 2-minute map autosave timer and the 4G lite stream run them.
+OPS_FILES = ("map_library.py", "robot_tasks.py", "remote_ops.py", "ros_session.py", "lite_stream.py")
+LITE_OPS = "~/.local/share/rpbot-console/ops/remote_ops.py"
+
+
+def ops_bundle():
+    files = {name: (HERE / name).read_text(encoding="utf-8") for name in OPS_FILES}
+    revision = hashlib.sha256("".join(files[name] for name in sorted(files)).encode("utf-8")).hexdigest()
+    return base64.b64encode(json.dumps(files).encode("utf-8")).decode("ascii"), revision
+
+
+def lite_command(settings, domain, *, address=None):
+    """Telemetry rendered on the Pi and sent over SSH: no DDS over a cellular uplink."""
+    return ssh_command(settings, f"python3 {LITE_OPS} lite-stream --domain {int(domain)}", address=address)
 
 
 def resolve_robot_address(settings):
@@ -165,7 +188,36 @@ def pc_profile(xml, host, domain):
                        ("participantIDGain", 2), ("offsetd0", 0),
                        ("offsetd1", 10), ("offsetd2", 1), ("offsetd3", 11)):
         child(local_ports, key).text = str(value)
+    if ipaddress.IPv4Address(address) in VPN_NETWORK:
+        # Over a VPN (e.g. Tailscale via 4G) the robot sends every sample to each
+        # locator the PC advertises; unreachable LAN/WSL addresses then waste the
+        # robot's uplink. Advertise only the PC's VPN address.
+        transports = root.find(tag("transport_descriptors"))
+        if transports is None:
+            transports = ET.Element(tag("transport_descriptors"))
+            root.insert(0, transports)
+        descriptor = ET.SubElement(transports, tag("transport_descriptor"))
+        ET.SubElement(descriptor, tag("transport_id")).text = "rpbot_vpn_udp"
+        ET.SubElement(descriptor, tag("type")).text = "UDPv4"
+        allowed = ET.SubElement(descriptor, tag("interfaceWhiteList"))
+        ET.SubElement(allowed, tag("address")).text = local_address_for(address)
+        user = rtps.find(tag("userTransports"))
+        if user is not None:
+            rtps.remove(user)
+        ET.SubElement(ET.SubElement(rtps, tag("userTransports")), tag("transport_id")).text = "rpbot_vpn_udp"
+        child(rtps, "useBuiltinTransports").text = "false"
     return ET.tostring(root, encoding="unicode")
+
+
+# Tailscale and NetBird hand out addresses from the carrier-grade NAT range.
+VPN_NETWORK = ipaddress.IPv4Network("100.64.0.0/10")
+
+
+def local_address_for(address):
+    """The local IPv4 address the OS routes to `address` (no packet is sent)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        probe.connect((address, 9))
+        return probe.getsockname()[0]
 
 
 def inspect_robot(settings):
@@ -173,6 +225,11 @@ def inspect_robot(settings):
     # opening/recovering DDS, instead of doing mDNS/WSL lookups on its event loop.
     address = resolve_robot_address(settings) if settings['host'].lower().endswith('.local') else None
     robot = json.loads(remote(settings, "status", address=address))
+    payload, revision = ops_bundle()
+    if robot.get("ops_revision") != revision:
+        # Keeps the Pi's autosave timer and lite stream in step with this Studio version.
+        robot["ops_installed"] = json.loads(remote(settings, "install-ops", address=address, payload=payload))
+        robot["ops_revision"] = revision
     sessions = [item for item in robot["launches"]
                 if item["mode"] in ("mapping", "navigation") and not item["simulated_time"]]
     if len(sessions) != 1:
@@ -183,7 +240,8 @@ def inspect_robot(settings):
         return {"robot": robot, "session": None, "data": None,
                 "note": note, "address": address}
     session = sessions[0]
-    return {"robot": robot, "session": session, "data": None, "address": address}
+    return {"robot": robot, "session": session, "data": None, "address": address,
+            "lite": (robot.get("uplink") or {}).get("kind") == "cellular"}
 
 
 def check_connection(settings):
@@ -219,7 +277,52 @@ def write_download(payload, parent):
     return target
 
 
+SYNC_DIR = Path.home() / "Documents" / "RPBot maps"
+SYNC_PERIOD_S = 120
+
+
+def download_changed_maps(settings, directory):
+    """Copy each Pi map whose revision differs from the PC's last copy. Returns what was written."""
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    index_path = directory / ".revisions.json"
+    try:
+        index = json.loads(index_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        index = {}
+    written = []
+    for record in json.loads(remote(settings, "maps"))["maps"]:
+        name = record["name"]
+        if "error" in record or index.get(name) == record["revision"]:
+            continue
+        staging = Path(tempfile.mkdtemp(dir=directory, prefix=".sync-"))
+        try:
+            payload = json.loads(remote(settings, "map-export", "--name", name,
+                                        "--revision", record["revision"], timeout=120))
+            write_download(payload, staging)
+            target = directory / validate_map_name(name)
+            if target.exists():
+                shutil.rmtree(target)
+            os.replace(staging / name, target)
+        except Exception as exc:
+            # An autosave may replace the map mid-download; the next sync picks it up.
+            written.append(f"{name} (chưa tải: {exc})")
+            continue
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+        index[name] = record["revision"]
+        index_path.write_text(json.dumps(index, indent=2), encoding="utf-8")
+        written.append(name)
+    return written
+
+
 class Console:
+    # Defaults for the 4G lite mode and map sync (tests build Console without __init__).
+    lite = False
+    live_window = None
+    syncing = False
+    last_sync = -SYNC_PERIOD_S
+
     def __init__(self, root):
         self.root = root
         STATE.mkdir(parents=True, exist_ok=True)
@@ -267,12 +370,13 @@ class Console:
         build_layout(self)
         self.i18n.attach(root)
         for variable in (self.activity, self.page_title, self.page_subtitle, self.page_number,
-                         self.selected_map_text, self.map_info, self.ping_status,
+                         self.selected_map_text, self.floor_current, self.map_info, self.ping_status,
                          self.dashboard.linear, self.dashboard.angular, *self.status.values()):
             self.i18n.variable(variable)
         self.i18n.tree(self.tasks_tree, text=True, columns=(2,))
         self.i18n.tree(self.topic_tree, columns=(2,))
         self.i18n.tree(self.maps_tree, columns=(0,))
+        self.i18n.tree(self.floor_tree, columns=(3,))
         if not self.settings['host'] or not self.settings['user']:
             self.tabs.select(self.tab_frames['settings'])
             self.activity.set('Nhập thiết bị và tài khoản SSH trong Kết nối')
@@ -409,6 +513,13 @@ class Console:
                     else:
                         self.metadata_failed(payload)
                     continue
+                elif kind == "sync":
+                    self.syncing = False
+                    if ok and result:
+                        self.append("Đã đồng bộ map về PC (" + str(SYNC_DIR) + "): " + ", ".join(result))
+                    elif not ok:
+                        self.append("Chưa đồng bộ được map về PC; sẽ thử lại: " + result)
+                    continue
                 elif kind == "ping":
                     self.pinging = False
                     self.ping_button.state(['!disabled'])
@@ -518,6 +629,7 @@ class Console:
         self.robot_address = report.get('address')
         self.session = report["session"]
         self.last_meta = time.monotonic()
+        self.sync_maps(settings, robot)
         recovered = self.connection.metadata_ok(self.last_meta, has_session=self.session is not None)
         if recovered:
             self.append('Đã kết nối lại SSH tới robot.')
@@ -543,7 +655,12 @@ class Console:
             self.status["navigation"].set("Chưa kiểm tra")
             self.resume_pending()
             return
-        key = (tuple(sorted(settings.items())), self.session["pid"], self.session["domain"], self.session.get("profile_xml"))
+        lite = bool(report.get("lite"))
+        if lite != self.lite:
+            self.append("Robot đang dùng 4G: chế độ tiết kiệm — Pi gửi ảnh bản đồ và trạng thái qua SSH, không gửi DDS."
+                        if lite else "Robot đã về Wi‑Fi/LAN: nhận ROS trực tiếp qua DDS.")
+        self.lite = lite
+        key = (tuple(sorted(settings.items())), self.session["pid"], self.session["domain"], self.session.get("profile_xml"), lite)
         if self.robot_address:
             key += (self.robot_address,)
         changed = self.stream_key != key
@@ -569,14 +686,27 @@ class Console:
             self.root.after(100, lambda: self.refresh_maps(background=True))
         self.resume_pending()
 
+    def sync_maps(self, settings, robot):
+        """On Wi-Fi/LAN only, copy maps the PC lacks or that changed (e.g. autosaves made on 4G)."""
+        if ((robot.get("uplink") or {}).get("kind") not in ("wifi", "lan") or self.syncing
+                or time.monotonic() - self.last_sync < SYNC_PERIOD_S):
+            return
+        self.syncing, self.last_sync = True, time.monotonic()
+        def worker():
+            try:
+                self.events.put(("sync", True, download_changed_maps(settings, SYNC_DIR), None))
+            except Exception as exc:
+                self.events.put(("sync", False, str(exc), None))
+        threading.Thread(target=worker, daemon=True).start()
+
     def start_stream(self, settings, key):
         self.stop_stream()
         self.stream_key, self.stream_seen = key, 0
         self.connection.stream_attempt(time.monotonic())
         try:
-            self.stream = TelemetryStream(session_args(settings, "stream", self.session,
-                                                       address=self.robot_address),
-                                          STATE / "telemetry.log", creationflags=HIDDEN)
+            command = (lite_command(settings, self.session["domain"], address=self.robot_address) if self.lite
+                       else session_args(settings, "stream", self.session, address=self.robot_address))
+            self.stream = TelemetryStream(command, STATE / "telemetry.log", creationflags=HIDDEN)
         except Exception as exc:
             if not self.connection.stream_recovering:
                 self.append('Chưa mở được luồng ROS; Console sẽ tự thử lại: ' + str(exc))
@@ -681,6 +811,20 @@ class Console:
                 and not (self.last_data or {}).get("navigation_available")):
             self.dialogs.showinfo("Navigation", "Chưa nhận được action server Nav2 trong phiên hiện tại. Kiểm tra chế độ và trạng thái robot trước.")
             return
+        if self.lite and action == "rviz":
+            # RViz would pull the full map, scans and TF over DDS; on 4G show the Pi-rendered map instead.
+            if self.live_window:
+                self.live_window.raise_()
+                return
+            from live_map_view import LiveMapWindow
+            def closed():
+                self.live_window = None
+            self.live_window = LiveMapWindow(self.root, on_close=closed)
+            if self.stream:
+                data = self.stream.snapshot()[0] or {}
+                self.live_window.update(self.stream.live()[0], data.get("pose"))
+            self.append("Robot đang dùng 4G: mở bản đồ nhẹ do Pi vẽ (ảnh mỗi ~5 s, vị trí mỗi 1 s) thay cho RViz.")
+            return
         if action in self.viewers and self.viewers[action].poll() is None:
             self.dialogs.showinfo("RViz", "Cửa sổ RViz này đang mở.")
             return
@@ -704,11 +848,19 @@ class Console:
             return
         domain = str(self.session["domain"])
 
+        with_3d = self.save_with_3d.get()
+
         def saved(result):
-            self.append("Đã lưu: " + json.loads(result)["saved"])
+            report = json.loads(result)
+            self.append("Đã lưu: " + report["saved"])
+            if report.get("map3d"):
+                self.append("Đã lưu map 3D cùng tên: " + report["map3d"] + " (camera SLAM đã dừng)")
+            elif report.get("map3d_error"):
+                self.append("Chưa lưu được map 3D: " + report["map3d_error"])
             self.map_name.set(self.new_name())
             self.root.after(100, self.refresh_maps)
-        self.task("Lưu bản đồ hiện tại trên Pi…", lambda: remote(settings, "save", "--name", name, "--domain", domain), saved)
+        args = ["--name", name, "--domain", domain] + (["--with-3d"] if with_3d else [])
+        self.task("Lưu bản đồ hiện tại trên Pi…", lambda: remote(settings, "save", *args, timeout=180), saved)
 
     def show_logs(self):
         settings = self.config()
@@ -785,6 +937,99 @@ class Console:
                   lambda: remote(settings, 'start-nav', '--name', record['name'],
                                  '--revision', record['revision'], '--domain', str(domain)), finished)
 
+    # Floors: one saved map per floor, switched at the elevator (pi5-stm32-slam scripts/floors.py).
+    def floor_level(self):
+        try:
+            level = int(self.floor_level_var.get())
+        except (tk.TclError, ValueError):
+            level = None
+        if level is None or not -9 <= level <= 99:
+            self.dialogs.showerror("Tầng", "Số tầng phải từ -9 đến 99.")
+            return None
+        return level
+
+    def show_floors(self, result):
+        report = json.loads(result)
+        floors = report.get("floors", [])
+        self.floor_records = {str(item["level"]): item for item in floors}
+        selected = self.floor_tree.selection()
+        self.floor_tree.delete(*self.floor_tree.get_children())
+        current = report.get("current")
+        for item in floors:
+            state = ["Map ✓" if item.get("map_exists") else "Thiếu map"]
+            if item.get("map3d_exists"):
+                state.append("3D ✓")
+            state.append("Thang máy ✓" if item.get("elevator") else "Chưa có thang máy")
+            level = str(item["level"])
+            self.floor_tree.insert("", "end", iid=level, values=(
+                ("▶ " if item["level"] == current else "") + level, item.get("label", ""),
+                item.get("map", "—"), " · ".join(state)))
+        keep = [iid for iid in selected if iid in self.floor_records]
+        if keep or floors:
+            self.floor_tree.selection_set(keep or [str(floors[0]["level"])])
+        self.floor_current.set("Tầng hiện tại: " + (str(current) if current is not None else "chưa chọn")
+                               + f" · {len(floors)} tầng đã đăng ký")
+
+    def selected_floor(self):
+        selected = self.floor_tree.selection()
+        record = self.floor_records.get(selected[0]) if selected else None
+        if not record:
+            self.dialogs.showinfo("Tầng", "Tải danh sách tầng rồi chọn một tầng.")
+        return record
+
+    def refresh_floors(self):
+        settings = self.config()
+        self.task("Đọc danh sách tầng trên Pi…",
+                  lambda: remote(settings, "floors", "--domain", str(self.task_domain_value())), self.show_floors)
+
+    def register_floor(self):
+        level = self.floor_level()
+        if level is None:
+            return
+        selected = self.selected_record()
+        if not selected:
+            self.tabs.select(self.tab_frames['maps'])
+            return
+        settings, record = selected
+        label = self.floor_label.get().strip() or f"Tầng {level}"
+        # The 3D map uses the LiDAR map's name (Lưu map with "kèm map 3D").
+        self.task(f"Gán map {record['name']} cho tầng {level}…",
+                  lambda: remote(settings, "floor-register", "--level", str(level), "--name", record['name'],
+                                 "--map3d", record['name'], "--label", label,
+                                 "--domain", str(self.task_domain_value())), self.show_floors)
+
+    def mark_elevator(self):
+        level = self.floor_level()
+        if level is None:
+            return
+        settings = self.config()
+        def marked(result):
+            self.append(f"Đã đánh dấu cửa thang máy tầng {level}: " + str(json.loads(result).get("elevator")))
+            self.show_floors(result)
+        self.task(f"Đánh dấu cửa thang máy tầng {level} tại vị trí robot…",
+                  lambda: remote(settings, "floor-mark", "--level", str(level),
+                                 "--domain", str(self.task_domain_value())), marked)
+
+    def switch_floor(self):
+        record = self.selected_floor()
+        if not record:
+            return
+        if not self.dialogs.askyesno("Chuyển tầng",
+                                     f"Robot đang đứng ở cửa thang máy tầng {record['level']} và đã dừng hẳn?\n"
+                                     "Nav2 sẽ nạp map tầng này và đặt lại vị trí robot tại cửa thang máy."):
+            return
+        settings = self.config()
+        def switched(result):
+            report = json.loads(result)
+            self.append(f"Đã chuyển sang tầng {report['level']} (map {report['map']})"
+                        + (f", map 3D {report['map3d']}" if report.get("map3d") else ""))
+            for warning in report.get("warnings", []):
+                self.append("Cảnh báo: " + warning)
+            self.show_floors(result)
+        self.task(f"Chuyển sang tầng {record['level']}…",
+                  lambda: remote(settings, "floor-switch", "--level", str(record['level']),
+                                 "--domain", str(self.task_domain_value()), timeout=180), switched)
+
     def tick(self):
         now = time.monotonic()
         if self.stream and self.session:
@@ -794,6 +1039,8 @@ class Console:
                 if self.connection.stream_received():
                     self.append('Đã phục hồi luồng trạng thái ROS trên PC.')
                 self.render_data(data)
+                if self.live_window and data.get("lite"):
+                    self.live_window.update(self.stream.live()[0], data.get("pose"))
             if (not self.stream.alive()) or (updated and now - updated > 2):
                 self.last_data = None
                 self.status["connection"].set("Mất luồng trạng thái ROS — đang chờ kết nối lại")
@@ -903,6 +1150,43 @@ class Console:
             self.control_task("Đang kiểm tra tác vụ cần dừng…",
                               lambda: remote(settings, 'tasks', '--domain', str(domain), '--scope', scope),
                               lambda result: self.confirm_stop_tasks(settings, domain, scope, json.loads(result)['tasks']))
+
+    def start_explore(self):
+        settings = self.require_session(self.start_explore)
+        if not settings:
+            return
+        if self.session.get("mode") != "mapping":
+            self.dialogs.showinfo("Tự khám phá", "Tự khám phá chạy trên map đang dựng. Bắt đầu Mapping trước.")
+            return
+        dry_run = self.explore_dry_run.get()
+        if not dry_run and not self.dialogs.askyesno(
+                "Bắt đầu tự khám phá?",
+                "Nav2 và explore_lite sẽ tự chọn vùng chưa quét và gửi lệnh /cmd_vel.\n\n"
+                "Robot chỉ chạy khi công tắc A ở AUTO và E đang bật motor. Hãy đứng gần robot, cầm tay cầm, "
+                "khu vực không có người hoặc bậc/hố. Gạt A về MANUAL hoặc bấm F để dừng ngay.\n\nTiếp tục?",
+                default='no', icon='warning'):
+            return
+        domain = str(self.session["domain"])
+        def started(result):
+            report = json.loads(result)
+            if report.get("explore") == "already_running":
+                self.append("Tự khám phá đang chạy rồi.")
+            else:
+                self.append("Đã bật tự khám phá" + (" (chạy thử, bánh xe không nhận lệnh)" if dry_run else "")
+                            + ". Nav2 cần khoảng 25 giây trước đích đầu tiên; gạt A xuống AUTO khi sẵn sàng.")
+        self.task("Đang bật Nav2 + explore_lite trên Pi…",
+                  lambda: remote(settings, "explore-start", "--domain", domain, *(["--dry-run"] if dry_run else [])),
+                  started)
+
+    def stop_explore(self):
+        if self.stop_busy:
+            return
+        settings = self.config()
+        def stopped(result):
+            state = json.loads(result).get("explore")
+            self.append("Đã dừng tự khám phá; Nav2 không còn gửi lệnh. Lái thủ công bằng tay cầm (A ở MANUAL)."
+                        if state == "stopped" else "Tự khám phá không chạy.")
+        self.control_task("Đang dừng tự khám phá…", lambda: remote(settings, "explore-stop"), stopped)
 
     def confirm_stop_tasks(self, settings, domain, scope, tasks):
         if not tasks:

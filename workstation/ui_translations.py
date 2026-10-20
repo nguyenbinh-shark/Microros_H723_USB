@@ -210,6 +210,41 @@ ENGLISH = {
     'Chọn thư mục tải map về PC': 'Choose a folder to download the map',
     'Đang tải YAML và PGM về PC…': 'Downloading YAML and PGM to this PC…',
     'Đã tải map về: ': 'Map downloaded to: ',
+    'Robot đang dùng 4G: chế độ tiết kiệm — Pi gửi ảnh bản đồ và trạng thái qua SSH, không gửi DDS.':
+        'Robot is on 4G: data saver mode — the Pi sends a map image and status over SSH, no DDS.',
+    'Robot đã về Wi‑Fi/LAN: nhận ROS trực tiếp qua DDS.': 'Robot is back on Wi‑Fi/LAN: receiving ROS directly over DDS.',
+    'Robot đang dùng 4G: mở bản đồ nhẹ do Pi vẽ (ảnh mỗi ~5 s, vị trí mỗi 1 s) thay cho RViz.':
+        'Robot is on 4G: opening the light map drawn by the Pi (image every ~5 s, pose every 1 s) instead of RViz.',
+    'Đã đồng bộ map về PC (': 'Maps synced to this PC (',
+    'Chế độ lái khi quét': 'Driving mode while mapping',
+    'Thủ công: công tắc A trên tay cầm ở MANUAL, lái bằng cần. '
+    'Tự khám phá: bấm Bắt đầu, rồi gạt A xuống AUTO và bật E để robot tự đi tới vùng chưa quét.':
+        'Manual: switch A on the transmitter in MANUAL, drive with the sticks. '
+        'Explore: click Start, then flip A down to AUTO and arm E so the robot drives to unmapped areas by itself.',
+    'Chạy thử: Nav2 tính đường nhưng không gửi lệnh tới bánh xe (dry run)':
+        'Dry run: Nav2 plans but sends no command to the wheels',
+    'Bắt đầu tự khám phá': 'Start exploring',
+    'Dừng tự khám phá': 'Stop exploring',
+    'Giành lại quyền lái bất cứ lúc nào: gạt A về MANUAL, hoặc bấm F (E-stop). '
+    'Mất sóng tay cầm thì bánh xe tự dừng. Dừng tạo map cũng dừng tự khám phá.':
+        'Take over at any time: flip A back to MANUAL, or press F (E-stop). '
+        'The wheels stop if the transmitter link is lost. Stopping mapping also stops exploring.',
+    'Tự khám phá': 'Explore',
+    'Tự khám phá chạy trên map đang dựng. Bắt đầu Mapping trước.': 'Exploring runs on the map being built. Start Mapping first.',
+    'Bắt đầu tự khám phá?': 'Start exploring?',
+    'Nav2 và explore_lite sẽ tự chọn vùng chưa quét và gửi lệnh /cmd_vel.\n\n'
+    'Robot chỉ chạy khi công tắc A ở AUTO và E đang bật motor. Hãy đứng gần robot, cầm tay cầm, '
+    'khu vực không có người hoặc bậc/hố. Gạt A về MANUAL hoặc bấm F để dừng ngay.\n\nTiếp tục?':
+        'Nav2 and explore_lite will pick unmapped areas and publish /cmd_vel.\n\n'
+        'The robot only moves while switch A is AUTO and E has the motors armed. Stay near the robot with the '
+        'transmitter, in an area without people, steps or holes. Flip A to MANUAL or press F to stop at once.\n\nContinue?',
+    'Tự khám phá đang chạy rồi.': 'Exploring is already running.',
+    'Đang bật Nav2 + explore_lite trên Pi…': 'Starting Nav2 + explore_lite on the Pi…',
+    'Đang dừng tự khám phá…': 'Stopping exploring…',
+    'Đã dừng tự khám phá; Nav2 không còn gửi lệnh. Lái thủ công bằng tay cầm (A ở MANUAL).':
+        'Exploring stopped; Nav2 no longer sends commands. Drive manually with the transmitter (A in MANUAL).',
+    'Tự khám phá không chạy.': 'Exploring is not running.',
+    'Chưa đồng bộ được map về PC; sẽ thử lại: ': 'Could not sync maps to this PC yet; will retry: ',
     'Đổi tên map': 'Rename map',
     'Tên mới (chữ không dấu, số, - hoặc _):': 'New name (ASCII letters, digits, - or _):',
     'Đang đổi tên map…': 'Renaming map…',
@@ -467,6 +502,54 @@ ENGLISH = {
     'Chưa thể bắt đầu Nav. Hãy dùng Dừng tạo map / Dừng Nav hoặc tab Tác vụ để dừng phiên hiện tại trước: ': 'Cannot start Nav yet. Use Stop mapping / Stop Nav or the Tasks tab to stop the current session first: ',
     'Chưa thể mở Mapping. Các phiên đang chạy: ': 'Cannot start Mapping. Running sessions: ',
     'Không khởi động được Nav; xem Debug → Đọc log robot.': 'Could not start Nav; see Debug → Read robot logs.',
+    # Control cards.
+    'Quét bản đồ': 'Scan a map',
+    'Bắt đầu quét rồi lái robot chậm quanh khu vực. Xem map đang dựng trong RViz.':
+        'Start scanning, then drive the robot slowly around the area. Watch the map grow in RViz.',
+    'Lưu trước khi dừng mapping. Tên dùng chữ không dấu, số, - hoặc _.':
+        'Save before stopping mapping. Names use unaccented letters, digits, - or _.',
+    'Phiên điều hướng': 'Navigation session',
+    'Trạng thái': 'Status',
+    'THIẾT LẬP TẦNG': 'FLOOR SETUP',
+    'Thiếu map': 'Map missing',
+    'Thang máy ✓': 'Elevator ✓',
+    'Chưa có thang máy': 'No elevator mark',
+    # Floors (one saved map per floor, switched at the elevator) and 3D map saving.
+    'Lưu kèm map 3D cùng tên (dừng camera SLAM)': 'Also save the 3D map under the same name (stops camera SLAM)',
+    'Đã lưu map 3D cùng tên: {0} (camera SLAM đã dừng)': 'Saved the 3D map under the same name: {0} (camera SLAM stopped)',
+    'Chưa lưu được map 3D: {0}': 'The 3D map was not saved: {0}',
+    'Nhiều tầng': 'Multiple floors',
+    'Tầng hiện tại: chưa tải danh sách': 'Current floor: list not loaded',
+    'Tầng hiện tại: {0} · {1} tầng đã đăng ký': 'Current floor: {0} · {1} floors registered',
+    'chưa chọn': 'not selected',
+    'Tải danh sách tầng': 'Load floors',
+    'Chuyển sang tầng này': 'Switch to this floor',
+    'Tầng số': 'Floor no.',
+    'Tên': 'Name',
+    'Gán map đang chọn cho tầng': 'Assign selected map to floor',
+    'Đánh dấu cửa thang máy tại vị trí robot': 'Mark the elevator door at the robot pose',
+    'Mỗi tầng: tạo map, đưa robot tới cửa thang máy rồi bấm Đánh dấu, lưu map (kèm map 3D), '
+    'chọn map trong Bản đồ đã lưu rồi Gán cho tầng. Khi đổi tầng bằng thang máy: chạy Nav trên bất kỳ tầng nào, '
+    'đưa robot ra cửa thang máy tầng mới rồi bấm Chuyển sang tầng này.':
+        'For each floor: build a map, drive the robot to the elevator door and press Mark, save the map (with the 3D map), '
+        'select it in Saved maps and Assign it to the floor. After riding the elevator: run Nav on any floor, '
+        'bring the robot out to the new floor\'s elevator door and press Switch to this floor.',
+    'Tầng': 'Floor',
+    'Số tầng phải từ -9 đến 99.': 'The floor number must be between -9 and 99.',
+    'Tải danh sách tầng rồi chọn một tầng.': 'Load the floors and select one.',
+    'Chuyển tầng': 'Switch floor',
+    'Robot đang đứng ở cửa thang máy tầng {0} và đã dừng hẳn?\nNav2 sẽ nạp map tầng này và đặt lại vị trí robot tại cửa thang máy.':
+        'Is the robot standing still at the elevator door of floor {0}?\nNav2 will load this floor\'s map and reset the robot pose at the elevator door.',
+    'Đọc danh sách tầng trên Pi…': 'Reading floors on the Pi…',
+    'Gán map {0} cho tầng {1}…': 'Assigning map {0} to floor {1}…',
+    'Đánh dấu cửa thang máy tầng {0} tại vị trí robot…': 'Marking the floor {0} elevator door at the robot pose…',
+    'Đã đánh dấu cửa thang máy tầng {0}: {1}': 'Marked the floor {0} elevator door: {1}',
+    'Chuyển sang tầng {0}…': 'Switching to floor {0}…',
+    'Đã chuyển sang tầng {0} (map {1}), map 3D {2}': 'Switched to floor {0} (map {1}), 3D map {2}',
+    'Đã chuyển sang tầng {0} (map {1})': 'Switched to floor {0} (map {1})',
+    'Cảnh báo: {0}': 'Warning: {0}',
+    'pi5-stm32-slam trên Pi chưa có scripts/floors.py; cập nhật repo trên Pi trước':
+        'pi5-stm32-slam on the Pi has no scripts/floors.py; update the repo on the Pi first',
 }
 
 # Source messages also compose fixed prefixes/suffixes with paths, names or PID

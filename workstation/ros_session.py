@@ -21,7 +21,8 @@ def environment(domain, profile):
         os.environ["FASTRTPS_DEFAULT_PROFILES_FILE"] = str(Path(profile).resolve())
 
 
-def probe(seconds, *, stream=False):
+def probe(seconds, *, stream=False, interval=0.2, extension=None):
+    """Print topic health as JSON. `extension` (lite stream on the Pi) may add fields per frame."""
     import rclpy
     from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
     from nav_msgs.msg import OccupancyGrid, Odometry
@@ -57,6 +58,8 @@ def probe(seconds, *, stream=False):
             kind, topic, lambda msg, topic=topic: receive(topic, msg), qos))
     buffer = Buffer()
     listener = TransformListener(buffer, node)
+    if extension:
+        extension.setup(node, buffer)
     started = time.monotonic()
     next_output, next_graph = started, started
     navigation_available = False
@@ -71,7 +74,7 @@ def probe(seconds, *, stream=False):
                 continue
             if not stream and now - started < seconds:
                 continue
-            next_output = now + 0.2
+            next_output = now + interval
             data["topics"] = {topic: dict(messages=counts.get(topic, 0),
                                       age_s=round(now - last[topic], 2) if topic in last else None)
                           for topic in ("/map", "/scan", "/odom", "/imu/data",
@@ -86,7 +89,8 @@ def probe(seconds, *, stream=False):
             data["mapping_ready"] = ("map" in data and data["tf_map_to_base"] and
                                   all(topic in last and now - last[topic] < 2.0
                                       for topic in ("/scan", "/odom")))
-            print(json.dumps(data, ensure_ascii=False), flush=True)
+            frame = extension.frame(dict(data), now) if extension else data
+            print(json.dumps(frame, ensure_ascii=False), flush=True)
     finally:
         node.destroy_node()
         rclpy.shutdown()

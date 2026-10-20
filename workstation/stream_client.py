@@ -10,6 +10,9 @@ class TelemetryStream:
         self.latest = None
         self.updated = 0.0
         self.frames = 0
+        # The lite stream sends a map image only every few seconds; keep the last one.
+        self.live_map = None
+        self.live_maps = 0
         self.lock = threading.Lock()
         self.log = open(log_path, "a", encoding="utf-8")
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -27,9 +30,12 @@ class TelemetryStream:
                         continue
                 except ValueError:
                     continue
+                live_map = snapshot.pop("live_map", None)
                 with self.lock:
                     self.latest, self.updated = snapshot, time.monotonic()
                     self.frames += 1
+                    if live_map:
+                        self.live_map, self.live_maps = live_map, self.live_maps + 1
         finally:
             self.process.stdout.close()
             self.log.close()
@@ -37,6 +43,10 @@ class TelemetryStream:
     def snapshot(self):
         with self.lock:
             return self.latest, self.updated, self.frames
+
+    def live(self):
+        with self.lock:
+            return self.live_map, self.live_maps
 
     def alive(self):
         return self.process.poll() is None

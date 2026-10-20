@@ -107,6 +107,20 @@ class ConsoleTests(unittest.TestCase):
         self.assertEqual(peers[-1].find("dds:port", NS).text, "7722")
         self.assertTrue(all(peer.find("dds:address", NS).text == "192.168.0.120" for peer in peers))
 
+    def test_lan_robot_keeps_builtin_transports(self):
+        root = ET.fromstring(console.pc_profile(PROFILE, "192.168.0.120", 0))
+        self.assertIsNone(root.find(".//dds:useBuiltinTransports", NS))
+        self.assertIsNone(root.find(".//dds:interfaceWhiteList", NS))
+
+    def test_vpn_robot_advertises_only_the_vpn_address(self):
+        with patch.object(console, "local_address_for", return_value="100.70.158.29"):
+            root = ET.fromstring(console.pc_profile(PROFILE, "100.88.94.46", 0))
+        self.assertEqual(root.find(".//dds:interfaceWhiteList/dds:address", NS).text, "100.70.158.29")
+        self.assertEqual(root.find(".//dds:useBuiltinTransports", NS).text, "false")
+        self.assertEqual([item.text for item in root.findall(".//dds:userTransports/dds:transport_id", NS)],
+                         ["rpbot_vpn_udp"])
+        self.assertEqual(len(root.findall(".//dds:initialPeersList/dds:locator", NS)), 32)
+
     def test_default_profile_respects_nonzero_domain(self):
         root = ET.fromstring(console.pc_profile("", "127.0.0.1", 77))
         self.assertEqual(root.find(".//dds:initialPeersList//dds:port", NS).text, "26660")

@@ -28,6 +28,11 @@ def apply(root):
     style.configure('Title.TLabel', font=('Segoe UI', 17, 'bold'))
     style.configure('Panel.TLabel', background=PANEL)
     style.configure('PanelMono.TLabel', background=PANEL, foreground=MUTED, font=MONO)
+    # Control cards: same white-on-paper cards as RPBot Vision.
+    style.configure('PanelMuted.TLabel', background=PANEL, foreground=MUTED, font=('Segoe UI', 9))
+    style.configure('CardTitle.TLabel', background=PANEL, foreground=INK, font=('Segoe UI', 11, 'bold'))
+    style.configure('CardStep.TLabel', background=INK, foreground='#ffffff', font=('Consolas', 9, 'bold'), padding=(6, 2))
+    style.configure('CardValue.TLabel', background=PANEL, foreground=BLUE_DARK, font=('Segoe UI', 10, 'bold'))
     style.configure('TButton', padding=(12, 9), background=PAPER, foreground=INK,
                     borderwidth=1, relief='solid', focusthickness=2, focuscolor=BLUE, font=('Segoe UI', 9))
     style.map('TButton', background=[('disabled', SUNKEN), ('pressed', LINE), ('active', SUNKEN)],
@@ -60,6 +65,8 @@ def apply(root):
     style.configure('TSpinbox', fieldbackground=PANEL, foreground=INK, padding=(6, 7), arrowsize=13)
     style.configure('TCheckbutton', background=PAPER, foreground=MUTED, font=('Segoe UI', 9), padding=3)
     style.map('TCheckbutton', background=[('active', PAPER)], indicatorbackground=[('selected', BLUE), ('!selected', PANEL)])
+    style.configure('Panel.TCheckbutton', background=PANEL, foreground=MUTED, font=('Segoe UI', 9), padding=3)
+    style.map('Panel.TCheckbutton', background=[('active', PANEL)], indicatorbackground=[('selected', BLUE), ('!selected', PANEL)])
     style.configure('TLabelframe', background=PAPER, bordercolor=LINE, borderwidth=1, relief='solid')
     style.configure('TLabelframe.Label', background=PAPER, foreground=MUTED, font=('Consolas', 9))
     style.configure('TSeparator', background=LINE)

@@ -70,15 +70,20 @@ def thumbnail(raw, max_width=600, max_height=380):
     width, height, pixels = read_pgm(raw)
     ratio = min(1.0, max_width / width, max_height / height)
     out_w, out_h = max(1, round(width * ratio)), max(1, round(height * ratio))
-    rows = bytearray()
+    rows = []
     for y in range(out_h):
-        rows.append(0)  # PNG filter: None
         row = min(height - 1, int(y / ratio)) * width
-        rows.extend(pixels[row + min(width - 1, int(x / ratio))] for x in range(out_w))
+        rows.append(bytes(pixels[row + min(width - 1, int(x / ratio))] for x in range(out_w)))
+    return png_gray(out_w, out_h, rows)
+
+
+def png_gray(width, height, rows):
+    """8-bit grayscale PNG from `height` rows of `width` bytes, top row first."""
+    raw = b"".join(b"\0" + bytes(row) for row in rows)  # PNG filter: None
     def chunk(kind, payload):
         return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xffffffff)
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", out_w, out_h, 8, 0, 0, 0, 0))
-    return png + chunk(b"IDAT", zlib.compress(bytes(rows))) + chunk(b"IEND", b"")
+    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+    return png + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
 
 
 def map_bundle(directory, name):

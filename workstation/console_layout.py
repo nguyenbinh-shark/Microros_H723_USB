@@ -50,6 +50,9 @@ def scroll_panel(parent, *, paper=False, stretch=False):
         canvas.configure(scrollregion=(0, 0, canvas.winfo_width(), height))
     inner.bind('<Configure>', resize)
     canvas.bind('<Configure>', resize)
+    # Re-wrapped labels change the content height without resizing the canvas window.
+    # Geometry propagation is itself an idle task, so measure a moment later.
+    inner.bind_all('<<ContentResized>>', lambda event: inner.after(30, resize), add='+')
     canvas.configure(yscrollcommand=scroll.set)
     canvas.pack(side='left', fill='both', expand=True)
     scroll.pack(side='right', fill='y')
@@ -73,35 +76,146 @@ def build_status(app, parent):
     app.dashboard.pack(fill='x', pady=(0, 12))
 
 
+def card(parent, step, title, subtitle=None):
+    """White card with a numbered heading, matching the RPBot Vision cards."""
+    border = tk.Frame(parent, background=theme.PANEL, highlightbackground=theme.LINE, highlightthickness=1)
+    inner = ttk.Frame(border, style='Panel.TFrame', padding=(16, 14))
+    inner.pack(fill='both', expand=True)
+    # A card that grows (wrapped text, table rows) must extend the page scroll region.
+    border.bind('<Configure>', lambda event: border.event_generate('<<ContentResized>>'), add='+')
+    head = ttk.Frame(inner, style='Panel.TFrame')
+    head.pack(fill='x', pady=(0, 10))
+    ttk.Label(head, text=step, style='CardStep.TLabel').pack(side='left', padx=(0, 10))
+    ttk.Label(head, text=title, style='CardTitle.TLabel').pack(side='left')
+    if subtitle:
+        note(inner, subtitle, pady=(0, 12))
+    return border, inner
+
+
+def note(parent, text=None, *, textvariable=None, pady=(0, 0), style='PanelMuted.TLabel'):
+    """Muted card text that wraps to the card width."""
+    label = ttk.Label(parent, text=text, textvariable=textvariable, style=style, justify='left')
+    label.pack(fill='x', anchor='w', pady=pady)
+    # The event width includes the card padding (16 px each side).
+    def rewrap(event):
+        width = max(200, event.width - 40)
+        if int(str(label.cget('wraplength')) or 0) != width:
+            label.configure(wraplength=width)
+    parent.bind('<Configure>', rewrap, add='+')
+    return label
+
+
+def card_grid(page, count=2):
+    """Equal columns that share the page width."""
+    grid = ttk.Frame(page)
+    grid.pack(fill='both', expand=True)
+    for column in range(count):
+        grid.columnconfigure(column, weight=1, uniform='cards')
+    return grid
+
+
+def stacked(app, parent, items):
+    """Full-width buttons, one per row, so long labels never clip in narrow cards."""
+    buttons = []
+    for text, callback, style, stop in items:
+        button = action(app, parent, text, callback, style=style, stop=stop)
+        button.pack(fill='x', pady=(0, 8))
+        buttons.append(button)
+    return buttons
+
+
 def build_mapping(app, page):
-    row = ttk.Frame(page)
-    row.pack(fill='x', pady=(0, 12))
-    action(app, row, 'Bắt đầu mapping', lambda: app.service('start'), style='Primary.TButton').pack(side='left', padx=(0, 8))
-    action(app, row, 'Mở RViz · Map', lambda: app.open_view('rviz')).pack(side='left', padx=(0, 8))
-    action(app, row, 'Dừng tạo map', lambda: app.stop_robot_tasks('mapping'), style='Danger.TButton', stop=True).pack(side='left')
-    ttk.Label(page, text='Lưu bản đồ hiện tại', font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(2, 6))
-    row = ttk.Frame(page)
-    row.pack(fill='x')
+    grid = card_grid(page)
+    border, scan = card(grid, '01', 'Quét bản đồ',
+                        'Bắt đầu quét rồi lái robot chậm quanh khu vực. Xem map đang dựng trong RViz.')
+    border.grid(row=0, column=0, sticky='nsew', padx=(0, 8))
+    stacked(app, scan, [('Bắt đầu mapping', lambda: app.service('start'), 'Primary.TButton', False),
+                        ('Mở RViz · Map', lambda: app.open_view('rviz'), 'TButton', False),
+                        ('Dừng tạo map', lambda: app.stop_robot_tasks('mapping'), 'Danger.TButton', True)])
+    ttk.Separator(scan).pack(fill='x', pady=(4, 12))
+    action(app, scan, 'Tạo map lại', app.reset_map).pack(anchor='w')
+    note(scan, 'Tạo map lại sẽ dựng từ đầu. Các bản đồ đã lưu vẫn được giữ.', pady=(8, 0))
+
+    border, save = card(grid, '02', 'Lưu bản đồ hiện tại',
+                        'Lưu trước khi dừng mapping. Tên dùng chữ không dấu, số, - hoặc _.')
+    border.grid(row=0, column=1, sticky='nsew', padx=(8, 0))
     app.map_name = tk.StringVar(value=app.new_name())
-    ttk.Entry(row, textvariable=app.map_name, width=26).pack(side='left', fill='x', expand=True, padx=(0, 8))
-    action(app, row, 'Lưu map', app.save_map, style='Primary.TButton').pack(side='right')
-    action(app, page, 'Tạo map lại', app.reset_map).pack(anchor='w', pady=(12, 0))
-    ttk.Label(page, text='Tạo map lại sẽ dựng từ đầu. Các bản đồ đã lưu vẫn được giữ.',
-              style='Muted.TLabel', font=('Segoe UI', 9), wraplength=600).pack(anchor='w', pady=(12, 0))
+    ttk.Entry(save, textvariable=app.map_name).pack(fill='x', pady=(0, 8))
+    app.save_with_3d = tk.BooleanVar(value=False)
+    ttk.Checkbutton(save, text='Lưu kèm map 3D cùng tên (dừng camera SLAM)', style='Panel.TCheckbutton',
+                    variable=app.save_with_3d).pack(anchor='w', pady=(0, 10))
+    action(app, save, 'Lưu map', app.save_map, style='Primary.TButton').pack(fill='x')
+
+    border, drive = card(grid, '03', 'Chế độ lái khi quét',
+                         'Thủ công: công tắc A trên tay cầm ở MANUAL, lái bằng cần. '
+                         'Tự khám phá: bấm Bắt đầu, rồi gạt A xuống AUTO và bật E để robot tự đi tới vùng chưa quét.')
+    border.grid(row=1, column=0, columnspan=2, sticky='nsew', pady=(16, 0))
+    app.explore_dry_run = tk.BooleanVar(value=False)
+    ttk.Checkbutton(drive, text='Chạy thử: Nav2 tính đường nhưng không gửi lệnh tới bánh xe (dry run)',
+                    style='Panel.TCheckbutton', variable=app.explore_dry_run).pack(anchor='w', pady=(0, 10))
+    row = ttk.Frame(drive, style='Panel.TFrame')
+    row.pack(fill='x')
+    start = action(app, row, 'Bắt đầu tự khám phá', app.start_explore, style='Primary.TButton')
+    # Mouse only: a stray Space/Enter must never start the robot driving.
+    start.configure(takefocus=False)
+    start.pack(side='left', padx=(0, 8))
+    action(app, row, 'Dừng tự khám phá', app.stop_explore, style='Danger.TButton', stop=True).pack(side='left')
+    note(drive, 'Giành lại quyền lái bất cứ lúc nào: gạt A về MANUAL, hoặc bấm F (E-stop). '
+         'Mất sóng tay cầm thì bánh xe tự dừng. Dừng tạo map cũng dừng tự khám phá.', pady=(10, 0))
 
 
 def build_navigation(app, page):
+    grid = card_grid(page)
+    border, session = card(grid, '01', 'Phiên điều hướng')
+    border.grid(row=0, column=0, sticky='nsew', padx=(0, 8))
     app.selected_map_text = tk.StringVar(value='Chưa chọn map — chọn trong Bản đồ đã lưu')
-    ttk.Label(page, textvariable=app.selected_map_text, wraplength=600, font=('Segoe UI', 10, 'bold')).pack(anchor='w', pady=(0, 8))
-    action(app, page, 'Chọn map đã lưu  ↗', lambda: app.tabs.select(app.tab_frames['maps']), style='Link.TButton').pack(anchor='w', pady=(0, 12))
-    row = ttk.Frame(page)
+    note(session, textvariable=app.selected_map_text, style='CardValue.TLabel', pady=(0, 2))
+    action(app, session, 'Chọn map đã lưu  ↗', lambda: app.tabs.select(app.tab_frames['maps']),
+           style='Link.TButton').pack(anchor='w', pady=(0, 10))
+    stacked(app, session, [('Bắt đầu Nav', app.start_navigation, 'Primary.TButton', False),
+                           ('Mở RViz · Navigation', lambda: app.open_view('navigation'), 'TButton', False),
+                           ('Dừng Nav', lambda: app.stop_robot_tasks('navigation'), 'Danger.TButton', True)])
+    note(session, 'Dừng Mapping trước khi bắt đầu Nav. Dùng 2D Pose Estimate trong RViz để đặt vị trí và hướng robot, '
+         'rồi chờ localization / Nav2 sẵn sàng trước khi gửi đích.', pady=(4, 0))
+    build_floors(app, grid)
+
+
+def build_floors(app, grid):
+    """One saved map per floor; the elevator door pose re-localizes the robot after a floor change."""
+    border, floors = card(grid, '02', 'Nhiều tầng')
+    border.grid(row=0, column=1, sticky='nsew', padx=(8, 0))
+    app.floor_records = {}
+    app.floor_current = tk.StringVar(value='Tầng hiện tại: chưa tải danh sách')
+    note(floors, textvariable=app.floor_current, style='CardValue.TLabel', pady=(0, 8))
+    columns = (('level', 'Tầng', 50), ('label', 'Tên', 90), ('map', 'Map', 130), ('state', 'Trạng thái', 220))
+    app.floor_tree = ttk.Treeview(floors, columns=[key for key, *_ in columns], show='headings',
+                                  height=4, selectmode='browse')
+    for key, heading, width in columns:
+        app.floor_tree.heading(key, text=heading, anchor='w')
+        app.floor_tree.column(key, width=width, minwidth=40, stretch=key in ('map', 'state'), anchor='w')
+    app.floor_tree.pack(fill='x', pady=(0, 8))
+    row = ttk.Frame(floors, style='Panel.TFrame')
+    row.pack(fill='x', pady=(0, 4))
+    row.columnconfigure(0, weight=1, uniform='floor')
+    row.columnconfigure(1, weight=1, uniform='floor')
+    action(app, row, 'Tải danh sách tầng', app.refresh_floors).grid(row=0, column=0, sticky='ew', padx=(0, 4))
+    action(app, row, 'Chuyển sang tầng này', app.switch_floor, style='Primary.TButton').grid(
+        row=0, column=1, sticky='ew', padx=(4, 0))
+    ttk.Separator(floors).pack(fill='x', pady=(10, 10))
+    ttk.Label(floors, text='THIẾT LẬP TẦNG', style='PanelMono.TLabel').pack(anchor='w', pady=(0, 6))
+    row = ttk.Frame(floors, style='Panel.TFrame')
     row.pack(fill='x', pady=(0, 8))
-    action(app, row, 'Bắt đầu Nav', app.start_navigation, style='Primary.TButton').pack(side='left', padx=(0, 8))
-    action(app, row, 'Mở RViz · Navigation', lambda: app.open_view('navigation')).pack(side='left', padx=(0, 8))
-    action(app, row, 'Dừng Nav', lambda: app.stop_robot_tasks('navigation'), style='Danger.TButton', stop=True).pack(side='left')
-    ttk.Label(page, text='Dừng Mapping trước khi bắt đầu Nav. Dùng 2D Pose Estimate trong RViz để đặt vị trí và hướng robot, '
-              'rồi chờ localization / Nav2 sẵn sàng trước khi gửi đích.', style='Muted.TLabel',
-              font=('Segoe UI', 10), wraplength=850).pack(anchor='w', pady=(10, 0))
+    ttk.Label(row, text='Tầng số', style='Panel.TLabel').pack(side='left', padx=(0, 6))
+    app.floor_level_var = tk.StringVar(value='1')
+    ttk.Spinbox(row, from_=-9, to=99, width=4, textvariable=app.floor_level_var).pack(side='left', padx=(0, 12))
+    ttk.Label(row, text='Tên', style='Panel.TLabel').pack(side='left', padx=(0, 6))
+    app.floor_label = tk.StringVar(value='')
+    ttk.Entry(row, textvariable=app.floor_label, width=12).pack(side='left', fill='x', expand=True)
+    stacked(app, floors, [('Đánh dấu cửa thang máy tại vị trí robot', app.mark_elevator, 'TButton', False),
+                          ('Gán map đang chọn cho tầng', app.register_floor, 'TButton', False)])
+    note(floors, 'Mỗi tầng: tạo map, đưa robot tới cửa thang máy rồi bấm Đánh dấu, lưu map (kèm map 3D), '
+         'chọn map trong Bản đồ đã lưu rồi Gán cho tầng. Khi đổi tầng bằng thang máy: chạy Nav trên bất kỳ tầng nào, '
+         'đưa robot ra cửa thang máy tầng mới rồi bấm Chuyển sang tầng này.')
 
 
 def build_tasks(app, page):
@@ -287,22 +401,29 @@ def build(app):
     workspace = ttk.Frame(app.workspace_split)
     app.workspace_split.add(workspace, minsize=145, stretch='always')
     footer = ttk.Frame(app.workspace_split)
-    app.workspace_split.add(footer, minsize=90, stretch='never')
+    # The log is secondary: a fixed starting height leaves most of the space to the control cards.
+    app.workspace_split.add(footer, minsize=90, stretch='never', height=150)
     row = ttk.Frame(footer)
     row.pack(fill='x', pady=(10, 8))
     ttk.Label(row, text='NHẬT KÝ THAO TÁC', style='Mono.TLabel').pack(side='left')
     ttk.Label(row, text='Kéo thanh phía trên để chỉnh chiều cao', style='Muted.TLabel', font=('Segoe UI', 9)).pack(side='right')
-    app.log = ScrolledText(footer, height=9, font=('Consolas', 10), wrap='word', state='disabled',
+    app.log = ScrolledText(footer, height=5, font=('Consolas', 10), wrap='word', state='disabled',
                           background=theme.SUNKEN, foreground=theme.INK, relief='flat', borderwidth=0,
                           highlightthickness=0, padx=10, pady=8, insertbackground=theme.INK)
     for tag, level in (('error', 'error'), ('warning', 'warning'), ('success', 'ok')):
         bg, fg, _ = COLORS[level]
         app.log.tag_configure(tag, foreground=fg, background=bg)
     app.log.pack(fill='both', expand=True)
-    def initial_split():
+    def initial_split(event=None):
         height = app.workspace_split.winfo_height()
-        log_height = max(110, min(230, round(height * 0.4)))
+        # At idle the window may not be laid out yet; place the sash once it has a real size.
+        if height < 300 or getattr(app, 'split_placed', False):
+            return
+        app.split_placed = True
+        # The log is secondary; give the control cards most of the height.
+        log_height = max(100, min(180, round(height * 0.3)))
         app.workspace_split.sash_place(0, 0, max(145, min(height-90, height-log_height)))
+    app.workspace_split.bind('<Configure>', initial_split, add='+')
     root.after_idle(initial_split)
     app.tabs = ttk.Notebook(workspace, style='Workspace.TNotebook')
     app.tabs.pack(side='left', fill='both', expand=True)

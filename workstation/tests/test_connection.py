@@ -106,6 +106,8 @@ class ConnectionGuiTests(unittest.TestCase):
         app.check = Mock()
         app.map_name = Mock()
         app.map_name.get.return_value = 'room'
+        app.save_with_3d = Mock()
+        app.save_with_3d.get.return_value = False
         with patch.object(console.messagebox, 'showinfo') as dialog:
             app.save_map()
             app.task.assert_not_called()
@@ -117,7 +119,7 @@ class ConnectionGuiTests(unittest.TestCase):
         app.task.assert_called_once()
         with patch.object(console, 'remote', return_value='saved') as remote:
             app.task.call_args.args[1]()
-        remote.assert_called_once_with(console.DEFAULTS, 'save', '--name', 'room', '--domain', '0')
+        remote.assert_called_once_with(console.DEFAULTS, 'save', '--name', 'room', '--domain', '0', timeout=180)
 
     def test_rviz_can_use_fresh_ros_when_ssh_is_down(self):
         app = self.app
