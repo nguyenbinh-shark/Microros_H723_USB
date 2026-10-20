@@ -300,3 +300,41 @@ class PickTests(unittest.TestCase):
             self.assertEqual(len(picked), 1)
         finally:
             root.destroy()
+
+
+class LocalizeTests(unittest.TestCase):
+    def room(self):
+        import numpy as np
+        grid = np.zeros((120, 160), dtype=np.int8)  # 8 x 6 m at 5 cm, free inside
+        grid[0, :] = grid[-1, :] = grid[:, 0] = grid[:, -1] = 100
+        grid[40:80, 60] = 100      # an inner wall
+        grid[90, 100:140] = 100    # and a shelf: the room is not symmetric
+        return grid
+
+    def scan(self, grid, pose, beams=360):
+        import numpy as np
+        ranges = []
+        for k in range(beams):
+            angle = pose[2] + 2 * math.pi * k / beams
+            r = 0.1
+            while r < 12:
+                col = int((pose[0] + r * math.cos(angle)) / 0.05)
+                row = int((pose[1] + r * math.sin(angle)) / 0.05)
+                if not (0 <= row < grid.shape[0] and 0 <= col < grid.shape[1]) or grid[row, col] >= 65:
+                    break
+                r += 0.025
+            ranges.append(r)
+        return np.array(ranges)
+
+    def test_a_rough_click_is_corrected_from_one_scan(self):
+        import localize
+        grid = self.room()
+        truth = (5.0, 2.0, 0.6)
+        points = localize.scan_points(self.scan(grid, truth), 0.0, 2 * math.pi / 360, 0.1, 12.0)
+        for guess in ((5.5, 1.6, 0.6 + math.radians(25)),     # near: within 1 m / 35 deg
+                      (3.5, 3.5, 0.6 - math.radians(120)),    # wide: 2 m off, facing elsewhere
+                      None):                                  # whole map
+            result = localize.locate(grid, 0.05, (0.0, 0.0), points, guess)
+            self.assertTrue(result["ok"], result)
+            self.assertLess(math.hypot(result["x"] - truth[0], result["y"] - truth[1]), 0.1)
+            self.assertLess(abs(math.remainder(result["yaw"] - truth[2], 2 * math.pi)), math.radians(3))

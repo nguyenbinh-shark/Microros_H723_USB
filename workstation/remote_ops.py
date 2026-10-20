@@ -82,26 +82,80 @@ def place(pose):
     pose.orientation.z, pose.orientation.w = math.sin(yaw / 2), math.cos(yaw / 2)
 
 try:
-    if action == 'pose':
+    if action in ('pose', 'locate'):
+        # The user's pose is only a hint: one scan is matched to the map near it (or over
+        # the whole map for 'locate'), then AMCL starts there and updates without motion.
+        import os
+        import numpy as np
         from geometry_msgs.msg import PoseWithCovarianceStamped
+        from nav_msgs.msg import OccupancyGrid
+        from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy, qos_profile_sensor_data
+        from sensor_msgs.msg import LaserScan
+        from std_srvs.srv import Empty
+        from tf2_ros import Buffer, TransformListener
+        sys.path.insert(0, os.path.expanduser('~/.local/share/rpbot-console/ops'))
+        import localize
         publisher = node.create_publisher(PoseWithCovarianceStamped, '/initialpose', 10)
-        deadline = time.monotonic() + 6
-        while not publisher.get_subscription_count() and time.monotonic() < deadline:
+        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        got = {}
+        node.create_subscription(OccupancyGrid, '/map', lambda m: got.setdefault('map', m), latched)
+        node.create_subscription(LaserScan, '/scan', lambda m: got.__setitem__('scan', m), qos_profile_sensor_data)
+        buffer = Buffer()
+        listener = TransformListener(buffer, node)
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline and not (publisher.get_subscription_count() and 'map' in got and 'scan' in got
+                                                     and buffer.can_transform('base_footprint', got['scan'].header.frame_id,
+                                                                              rclpy.time.Time())):
             rclpy.spin_once(node, timeout_sec=0.1)
         if not publisher.get_subscription_count():
             raise RuntimeError('AMCL is not running (nobody subscribes /initialpose); start Nav first')
+        located = None
+        if 'map' in got and 'scan' in got:
+            scan, grid_msg = got['scan'], got['map']
+            try:
+                t = buffer.lookup_transform('base_footprint', scan.header.frame_id, rclpy.time.Time()).transform
+                q = t.rotation
+                laser = (t.translation.x, t.translation.y,
+                         math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)))
+            except Exception:
+                laser = (0.0, 0.0, 0.0)
+            points = localize.scan_points(scan.ranges, scan.angle_min, scan.angle_increment,
+                                          scan.range_min, scan.range_max, laser)
+            info = grid_msg.info
+            grid = np.array(grid_msg.data, dtype=np.int8).reshape(info.height, info.width)
+            located = localize.locate(grid, info.resolution, (info.origin.position.x, info.origin.position.y),
+                                      points, None if action == 'locate' else (x, y, yaw))
+            located = {key: (float(value) if isinstance(value, (float, np.floating)) else value)
+                       for key, value in located.items()}
+        if located and located['ok']:
+            x, y, yaw = located['x'], located['y'], located['yaw']
+            spread = (0.04, 0.03)   # 0.2 m, 10 deg: the scan already fits here
+        elif action == 'locate':
+            raise RuntimeError('Could not find the robot on the map from one scan (best %.2f, next %.2f); '
+                               'set the pose by hand' % ((located or {}).get('score', 0), (located or {}).get('runner_up') or 0))
+        else:
+            spread = (0.25, 0.0685)  # 0.5 m, 15 deg: the user's hint as given
         message = PoseWithCovarianceStamped()
         message.header.frame_id = 'map'
         place(message.pose.pose)
         covariance = [0.0] * 36
-        covariance[0] = covariance[7] = 0.25   # 0.5 m
-        covariance[35] = 0.0685                # 15 deg
+        covariance[0] = covariance[7] = spread[0]
+        covariance[35] = spread[1]
         message.pose.covariance = covariance
         for _ in range(3):
             message.header.stamp = node.get_clock().now().to_msg()
             publisher.publish(message)
             rclpy.spin_once(node, timeout_sec=0.2)
-        print(json.dumps({'initial_pose': [x, y, yaw]}))
+        # AMCL normally waits for motion; let it weigh a few scans where the robot stands.
+        update = node.create_client(Empty, '/request_nomotion_update')
+        if update.wait_for_service(timeout_sec=2.0):
+            for _ in range(8):
+                future = update.call_async(Empty.Request())
+                rclpy.spin_until_future_complete(node, future, timeout_sec=1.0)
+                end = time.monotonic() + 0.3
+                while time.monotonic() < end:
+                    rclpy.spin_once(node, timeout_sec=0.05)
+        print(json.dumps({'initial_pose': [round(x, 3), round(y, 3), round(yaw, 4)], 'located': located}))
     elif action == 'goal':
         from rclpy.action import ActionClient
         from nav2_msgs.action import NavigateToPose
@@ -143,7 +197,7 @@ def nav_command(action, domain, x=0.0, y=0.0, yaw=0.0):
     import math
     if not 0 <= domain <= 232:
         raise ValueError("Invalid ROS domain")
-    if action not in ("pose", "goal", "cancel"):
+    if action not in ("pose", "locate", "goal", "cancel"):
         raise ValueError("Unknown nav command")
     if not all(math.isfinite(value) and abs(value) < 10000 for value in (x, y, yaw)):
         raise ValueError("Invalid pose")
@@ -153,7 +207,7 @@ def nav_command(action, domain, x=0.0, y=0.0, yaw=0.0):
     env = dict(os.environ, ROS_DOMAIN_ID=str(domain), RMW_IMPLEMENTATION="rmw_fastrtps_cpp")
     result = run(['bash', '-c', 'source "$1/scripts/env.sh" >/dev/null && exec python3 -c "$2" "${@:3}"',
                   'rpbot-nav', str(ROOT), NAV_PROGRAM, action, repr(float(x)), repr(float(y)), repr(float(yaw))],
-                 env=env)
+                 env=env, timeout=75)  # a whole-map search takes ~10 s on the Pi
     if result.returncode:
         lines = (result.stderr or result.stdout).strip().splitlines()
         raise RuntimeError(lines[-1] if lines else "Nav command failed")
@@ -338,8 +392,8 @@ def reset_mapping(domain, pid, *, inspect=False):
     return json.loads(result.stdout)
 
 
-def run(args, **kwargs):
-    return subprocess.run(args, text=True, capture_output=True, timeout=30, **kwargs)
+def run(args, timeout=30, **kwargs):
+    return subprocess.run(args, text=True, capture_output=True, timeout=timeout, **kwargs)
 
 
 FLOOR_ACTIONS = {"floors": "list", "floor-register": "register", "floor-mark": "mark-elevator",
@@ -763,7 +817,7 @@ def main():
     parser.add_argument("action", choices=("status", "save", "reset", "reset-info", "logs", "start", "stop", "install-autostart",
                                            "maps", "map-preview", "map-export", "map-rename", "map-delete", "tasks", "stop-tasks", "start-nav",
                                            "install-ops", "autosave", "lite-stream", "explore-start", "explore-stop",
-                                           "nav-switch", "nav-stop", "nav-pose", "nav-goal", "nav-cancel",
+                                           "nav-switch", "nav-stop", "nav-pose", "nav-locate", "nav-goal", "nav-cancel",
                                            *FLOOR_ACTIONS))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--resume-mapping", action="store_true")
@@ -790,7 +844,7 @@ def main():
         print(json.dumps(nav_switch(args.name, args.revision, args.domain)))
     elif args.action == "nav-stop":
         print(json.dumps(nav_stop(args.resume_mapping)))
-    elif args.action in ("nav-pose", "nav-goal", "nav-cancel"):
+    elif args.action in ("nav-pose", "nav-locate", "nav-goal", "nav-cancel"):
         print(json.dumps(nav_command(args.action[4:], args.domain, args.x, args.y, args.yaw)))
     elif args.action == "install-ops":
         print(json.dumps(install_ops(OPS_PAYLOAD)))

@@ -117,7 +117,7 @@ def remote(settings, action, *args, address=None, timeout=45, payload=None):
 
 
 # Installed on the Pi: the 2-minute map autosave timer and the 4G lite stream run them.
-OPS_FILES = ("map_library.py", "robot_tasks.py", "remote_ops.py", "ros_session.py", "lite_stream.py")
+OPS_FILES = ("map_library.py", "robot_tasks.py", "remote_ops.py", "ros_session.py", "lite_stream.py", "localize.py")
 LITE_OPS = "~/.local/share/rpbot-console/ops/remote_ops.py"
 
 
