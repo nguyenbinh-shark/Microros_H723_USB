@@ -49,15 +49,21 @@ def probe(seconds, *, stream=False, interval=0.2, extension=None):
             data["velocity"] = dict(linear=msg.twist.twist.linear.x,
                                     angular=msg.twist.twist.angular.z)
 
+    light = getattr(extension, "light", False)
+    watched = (("/map", OccupancyGrid, latched),
+               ("/scan", LaserScan, sensor), ("/odom", Odometry, sensor),
+               ("/imu/data", Imu, sensor), ("/motor_fb", JointState, sensor),
+               ("/motor_status", UInt8, sensor))
+    if light:
+        # Lite stream on the Pi: only cheap topics; /scan is counted without decoding.
+        watched = (("/scan", LaserScan, sensor), ("/motor_status", UInt8, sensor))
     subscriptions = []
-    for topic, kind, qos in (("/map", OccupancyGrid, latched),
-                             ("/scan", LaserScan, sensor), ("/odom", Odometry, sensor),
-                             ("/imu/data", Imu, sensor), ("/motor_fb", JointState, sensor),
-                             ("/motor_status", UInt8, sensor)):
+    for topic, kind, qos in watched:
+        raw = light and topic == "/scan"
         subscriptions.append(node.create_subscription(
-            kind, topic, lambda msg, topic=topic: receive(topic, msg), qos))
-    buffer = Buffer()
-    listener = TransformListener(buffer, node)
+            kind, topic, lambda msg, topic=topic: receive(topic, msg), qos, raw=raw))
+    buffer = None if light else Buffer()
+    listener = None if light else TransformListener(buffer, node)
     if extension:
         extension.setup(node, buffer)
     started = time.monotonic()
@@ -77,10 +83,15 @@ def probe(seconds, *, stream=False, interval=0.2, extension=None):
             next_output = now + interval
             data["topics"] = {topic: dict(messages=counts.get(topic, 0),
                                       age_s=round(now - last[topic], 2) if topic in last else None)
-                          for topic in ("/map", "/scan", "/odom", "/imu/data",
-                                        "/motor_fb", "/motor_status")}
-            data["tf_map_to_base"] = bool(buffer.can_transform(
-                "map", "base_footprint", rclpy.time.Time()))
+                          for topic, _, _ in watched}
+            if light:
+                data["tf_map_to_base"] = extension.pose() is not None
+                if extension.map is not None:
+                    info = extension.map.info
+                    data["map"] = dict(width=info.width, height=info.height, resolution=info.resolution)
+            else:
+                data["tf_map_to_base"] = bool(buffer.can_transform(
+                    "map", "base_footprint", rclpy.time.Time()))
             if now >= next_graph:
                 next_graph = now + 1.0
                 navigation_available = any(name == "/navigate_to_pose/_action/send_goal"
@@ -88,7 +99,7 @@ def probe(seconds, *, stream=False, interval=0.2, extension=None):
             data["navigation_available"] = navigation_available
             data["mapping_ready"] = ("map" in data and data["tf_map_to_base"] and
                                   all(topic in last and now - last[topic] < 2.0
-                                      for topic in ("/scan", "/odom")))
+                                      for topic in (("/scan",) if light else ("/scan", "/odom"))))
             frame = extension.frame(dict(data), now) if extension else data
             print(json.dumps(frame, ensure_ascii=False), flush=True)
     finally:

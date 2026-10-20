@@ -148,6 +148,12 @@ class LiveMapAssembler:
 class LiteExtension:
     """Hooks for ros_session.probe: adds pose, uplink and a throttled map image."""
 
+    # On a busy Pi the stream must stay cheap: the full /tf (110 Hz) and the 50 Hz
+    # sensor topics cost ~30% of a core in Python, and starving SLAM of CPU made it
+    # lose scans (2026-10-20). probe() then skips them; the pose comes from the
+    # localizer's own low-rate topic.
+    light = True
+
     def __init__(self):
         self.map = None
         self.map_seq = 0
@@ -164,8 +170,21 @@ class LiteExtension:
 
     def setup(self, node, buffer):
         from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+        from geometry_msgs.msg import PoseWithCovarianceStamped
         from nav_msgs.msg import OccupancyGrid
-        self.buffer = buffer
+        self.node, self.buffer, self.listener = node, buffer, None
+        self.last_pose = None
+        # slam_toolbox (mapping) publishes /pose, AMCL (Nav) /amcl_pose, each per processed
+        # scan: a few Hz while moving, nothing while still (the pose does not change then).
+        def located(msg):
+            p, q = msg.pose.pose.position, msg.pose.pose.orientation
+            yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+            self.last_pose = {"x": round(p.x, 3), "y": round(p.y, 3), "yaw": round(yaw, 3)}
+            self.stop_tf()
+        self.pose_subscriptions = [node.create_subscription(PoseWithCovarianceStamped, topic, located, 10)
+                                   for topic in ("/pose", "/amcl_pose")]
+        self.own_tf = buffer is None
+        self.start_tf()
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE,
                              durability=DurabilityPolicy.TRANSIENT_LOCAL)
         def received(msg):
@@ -184,6 +203,10 @@ class LiteExtension:
                 if self.nav is None or self.nav.get("state") != state:
                     self.nav = {"state": state}
         def feedback(msg):
+            # Nav2 reports the robot pose with each feedback, more often than AMCL.
+            p, q = msg.feedback.current_pose.pose.position, msg.feedback.current_pose.pose.orientation
+            self.last_pose = {"x": round(p.x, 3), "y": round(p.y, 3),
+                              "yaw": round(math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)), 3)}
             if self.nav is not None and self.nav.get("state") in ("accepted", "executing"):
                 self.nav.update(distance=round(msg.feedback.distance_remaining, 2),
                                 eta=msg.feedback.estimated_time_remaining.sec,
@@ -193,15 +216,31 @@ class LiteExtension:
             node.create_subscription(NavigateToPose.Impl.FeedbackMessage, "/navigate_to_pose/_action/feedback",
                                      feedback, 10))
 
+    def start_tf(self):
+        """Until the robot moves there is no pose message: read TF just for the start."""
+        if self.own_tf and self.listener is None:
+            from tf2_ros import Buffer, TransformListener
+            self.buffer = Buffer()
+            self.listener = TransformListener(self.buffer, self.node)
+
+    def stop_tf(self):
+        if self.own_tf and self.listener is not None:
+            self.listener.unregister()
+            self.listener = None
+
     def pose(self):
         import rclpy
+        if self.last_pose is not None or self.buffer is None or (self.own_tf and self.listener is None):
+            return self.last_pose
         try:
             t = self.buffer.lookup_transform("map", "base_footprint", rclpy.time.Time()).transform
         except Exception:
             return None
         q = t.rotation
         yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-        return {"x": round(t.translation.x, 3), "y": round(t.translation.y, 3), "yaw": round(yaw, 3)}
+        self.last_pose = {"x": round(t.translation.x, 3), "y": round(t.translation.y, 3), "yaw": round(yaw, 3)}
+        self.stop_tf()
+        return self.last_pose
 
     def frame(self, data, now):
         data["lite"] = True
@@ -224,6 +263,9 @@ class LiteExtension:
 
     def new_map(self):
         """SLAM reset (Quét mới) or another map (Nav): the old path and image no longer apply."""
+        self.last_pose = None  # a reset or AMCL puts the robot somewhere else
+        if hasattr(self, "node"):
+            self.start_tf()
         self.path = []
         self.path_sent = self.path_total
         self.sent = None
