@@ -226,7 +226,7 @@ class NavTests(unittest.TestCase):
              patch.object(remote_ops, "run", run), \
              patch.object(remote_ops, "autosave", side_effect=lambda: calls.append("autosave") or {"autosave": "a"}), \
              patch.object(remote_ops, "stop_explore", side_effect=lambda: calls.append("explore-stop") or {}), \
-             patch.object(remote_ops, "start_navigation",
+             patch.object(remote_ops, "session_map_name", return_value="autosave_other"),              patch.object(remote_ops, "last_pose", return_value=None),              patch.object(remote_ops, "start_navigation",
                           side_effect=lambda *a: calls.append("start-nav") or {"status": "started"}):
             report = remote_ops.nav_switch("room_1", "rev", 0)
         self.assertEqual(calls, ["systemctl --user is-active rpbot-mapping.service", "autosave", "explore-stop",
@@ -238,9 +238,32 @@ class NavTests(unittest.TestCase):
         import remote_ops
         sessions = [[{"mode": "mapping", "pid": 7, "domain": 0, "simulated_time": False}], [], []]
         started = []
-        with patch.object(remote_ops, "launches", side_effect=lambda: sessions.pop(0) if sessions else []),              patch.object(remote_ops, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),              patch.object(remote_ops, "autosave", return_value={"autosave": "autosave_20261020_1502"}),              patch.object(remote_ops, "stop_explore", return_value={}),              patch.object(remote_ops, "map_bundle", return_value=({"revision": "new"},)),              patch.object(remote_ops, "start_navigation", side_effect=lambda *a: started.append(a) or {}):
-            remote_ops.nav_switch("autosave_20261020_1502", "old", 0)
-        self.assertEqual(started, [("autosave_20261020_1502", "new", 0)])
+        with patch.object(remote_ops, "launches", side_effect=lambda: sessions.pop(0) if sessions else []),              patch.object(remote_ops, "run", return_value=subprocess.CompletedProcess([], 0, "", "")),              patch.object(remote_ops, "autosave", return_value={"autosave": "autosave_20261020_1502"}),              patch.object(remote_ops, "stop_explore", return_value={}),              patch.object(remote_ops, "map_bundle", return_value=({"revision": "new"},)),              patch.object(remote_ops, "session_map_name", return_value="autosave_20261020_1502"),              patch.object(remote_ops, "read_pose", return_value={"x": 1.0, "y": 2.0, "yaw": 0.5}),              patch.object(remote_ops, "start_navigation", side_effect=lambda *a: started.append(a) or {}):
+            report = remote_ops.nav_switch("autosave_20261020_1502", "old", 0)
+        # This session's map: Nav takes its new revision and AMCL starts at the SLAM pose.
+        self.assertEqual(started[0][:3], ("autosave_20261020_1502", "new", 0))
+        self.assertEqual((started[0][3]["x"], started[0][3]["source"]), (1.0, "mapping"))
+        self.assertEqual(report["initial_pose"]["yaw"], 0.5)
+
+    def test_another_map_starts_from_the_pose_kept_for_it_or_asks_for_one(self):
+        import subprocess
+        import remote_ops
+        started = []
+        kept = {"map": "room_1", "x": 3.0, "y": -1.0, "yaw": 1.2, "time": 0}
+        for stored, expected in ((kept, "last"), (None, None)):
+            started.clear()
+            with patch.object(remote_ops, "launches", return_value=[]),                  patch.object(remote_ops, "last_pose", return_value=stored),                  patch.object(remote_ops, "start_navigation", side_effect=lambda *a: started.append(a) or {}):
+                report = remote_ops.nav_switch("room_1", "rev", 0)
+            pose = started[0][3]
+            self.assertEqual(pose and pose["source"], expected)
+            self.assertEqual(report["initial_pose"], pose)
+
+    def test_kept_pose_is_only_used_for_its_own_map(self):
+        import remote_ops
+        with tempfile.TemporaryDirectory() as folder, patch.object(remote_ops, "LAST_POSE", Path(folder, "p.json")):
+            remote_ops.keep_pose("room_1", {"x": 1.0, "y": 2.0, "yaw": 0.0}, "amcl")
+            self.assertEqual(remote_ops.last_pose("room_1")["x"], 1.0)
+            self.assertIsNone(remote_ops.last_pose("room_2"))
 
     def test_pose_and_goal_need_a_running_nav_and_finite_numbers(self):
         import remote_ops

@@ -160,6 +160,97 @@ def nav_command(action, domain, x=0.0, y=0.0, yaw=0.0):
     return json.loads(result.stdout.strip().splitlines()[-1])
 
 
+POSE_PROGRAM = r'''
+import json
+import math
+import time
+import rclpy
+from tf2_ros import Buffer, TransformListener
+
+rclpy.init()
+node = rclpy.create_node('rpbot_read_pose')
+buffer = Buffer()
+listener = TransformListener(buffer, node)
+deadline = time.monotonic() + 6
+pose = None
+while pose is None and time.monotonic() < deadline:
+    rclpy.spin_once(node, timeout_sec=0.1)
+    try:
+        t = buffer.lookup_transform('map', 'base_footprint', rclpy.time.Time()).transform
+    except Exception:
+        continue
+    q = t.rotation
+    pose = {'x': round(t.translation.x, 3), 'y': round(t.translation.y, 3),
+            'yaw': round(math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)), 4)}
+print(json.dumps(pose))
+node.destroy_node()
+rclpy.shutdown()
+'''
+
+# Keeps the AMCL pose on disk while Nav runs, so the next Nav start on the same map
+# can begin where the robot stopped (it runs inside the Nav service's control group).
+KEEPER_PROGRAM = r'''
+import json
+import math
+import os
+import sys
+import time
+import rclpy
+from geometry_msgs.msg import PoseWithCovarianceStamped
+
+target, name = sys.argv[1], sys.argv[2]
+rclpy.init()
+node = rclpy.create_node('rpbot_pose_keeper')
+last = [0.0]
+
+def keep(message):
+    now = time.time()
+    if now - last[0] < 2.0:
+        return
+    last[0] = now
+    p, q = message.pose.pose.position, message.pose.pose.orientation
+    pose = {'map': name, 'x': round(p.x, 3), 'y': round(p.y, 3),
+            'yaw': round(math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z)), 4),
+            'time': now, 'source': 'amcl'}
+    with open(target + '.tmp', 'w') as stream:
+        json.dump(pose, stream)
+    os.replace(target + '.tmp', target)
+
+node.create_subscription(PoseWithCovarianceStamped, '/amcl_pose', keep, 10)
+rclpy.spin(node)
+'''
+
+LAST_POSE = Path.home() / ".local/share/rpbot-console/last_pose.json"
+
+
+def read_pose(domain):
+    """The robot pose map -> base_footprint from the running stack, or None."""
+    env = dict(os.environ, ROS_DOMAIN_ID=str(domain), RMW_IMPLEMENTATION="rmw_fastrtps_cpp")
+    result = run(['bash', '-c', 'source "$1/scripts/env.sh" >/dev/null && exec python3 -c "$2"',
+                  'rpbot-pose', str(ROOT), POSE_PROGRAM], env=env)
+    try:
+        return json.loads(result.stdout.strip().splitlines()[-1]) if not result.returncode else None
+    except (ValueError, IndexError):
+        return None
+
+
+def keep_pose(name, pose, source):
+    LAST_POSE.parent.mkdir(parents=True, exist_ok=True)
+    temporary = LAST_POSE.with_suffix(".tmp")
+    import time
+    temporary.write_text(json.dumps(dict(pose, map=name, time=time.time(), source=source)))
+    os.replace(temporary, LAST_POSE)
+
+
+def last_pose(name):
+    """The pose kept for map `name` (by Nav's keeper or the mapping autosave), or None."""
+    try:
+        pose = json.loads(LAST_POSE.read_text())
+    except (OSError, ValueError):
+        return None
+    return pose if pose.get("map") == name else None
+
+
 def wait_no_launches(seconds=40):
     import time
     deadline = time.monotonic() + seconds
@@ -169,24 +260,44 @@ def wait_no_launches(seconds=40):
         time.sleep(1)
 
 
+def session_map_name(pid):
+    from datetime import datetime
+    return datetime.fromtimestamp(process_start(pid)).strftime("autosave_%Y%m%d_%H%M")
+
+
 def nav_switch(name, revision, domain):
-    """Leave mapping for Nav on a saved map. The live LiDAR map is autosaved first."""
+    """Leave mapping for Nav on a saved map. The live LiDAR map is autosaved first.
+
+    AMCL starts from the robot's pose: from SLAM when the chosen map is this mapping
+    session's autosave (same map frame), else the pose last kept for that map."""
+    import time
     report = {}
+    initial = None
     current = launches()
     mapping = [item for item in current if item["mode"] == "mapping"]
     if mapping:
         if run(["systemctl", "--user", "is-active", SERVICE]).returncode:
             raise RuntimeError("Mapping was not started by RPBot; stop it yourself first")
+        if len(mapping) == 1 and session_map_name(mapping[0]["pid"]) == name:
+            pose = read_pose(mapping[0]["domain"])
+            if pose:
+                initial = dict(pose, source="mapping", age_s=0)
         report["saved"] = autosave()
         report["explore"] = stop_explore()
         result = run(["systemctl", "--user", "stop", SERVICE])
         if result.returncode:
             raise RuntimeError(result.stderr)
         wait_no_launches()
-        if report["saved"].get("autosave") == name:
+        if report["saved"].get("autosave") == name or initial:
             # The chosen map is this session's autosave, just refreshed: Nav takes the newest copy.
             revision = map_bundle(ROOT / "maps", name)[0]["revision"]
-    report.update(start_navigation(name, revision, domain))
+    if initial is None:
+        kept = last_pose(name)
+        if kept:
+            initial = dict(x=kept["x"], y=kept["y"], yaw=kept["yaw"], source="last",
+                           age_s=round(time.time() - kept.get("time", 0)))
+    report.update(start_navigation(name, revision, domain, initial))
+    report["initial_pose"] = initial
     return report
 
 
@@ -452,6 +563,10 @@ def autosave():
         os.replace(staging / (name + ".pgm"), maps / (name + ".pgm"))
         os.replace(staging / (name + ".yaml"), maps / (name + ".yaml"))
     shutil.rmtree(staging, ignore_errors=True)
+    # Also keep where the robot is on this map, for a later Nav start on it.
+    pose = read_pose(session["domain"])
+    if pose:
+        keep_pose(name, pose, "mapping")
     return {"autosave": name}
 
 
@@ -566,7 +681,7 @@ WantedBy=default.target
     return {"autostart": "enabled", "current_session": "unchanged", "linger": linger}
 
 
-def start_navigation(name, revision, domain):
+def start_navigation(name, revision, domain, initial_pose=None):
     """Start a saved map without replacing a running stack or enabling motors."""
     import fcntl
 
@@ -601,9 +716,16 @@ def start_navigation(name, revision, domain):
             raise RuntimeError("Build pi5-stm32-slam on the Pi first")
         wrapper = target / "navigation.sh"
         command = [str(ROOT / "scripts/run.sh"), "navigation", "map:=" + str(map_yaml), "allow_motor_enable:=false"]
+        if initial_pose:
+            command.append("initial_pose:=%.3f,%.3f,%.4f" % (initial_pose["x"], initial_pose["y"], initial_pose["yaw"]))
+        keeper = target / "pose_keeper.py"
+        keeper.write_text(KEEPER_PROGRAM)
+        keep = shlex.join(["bash", "-c", 'source "$1/scripts/env.sh" >/dev/null && exec python3 "$2" "$3" "$4"',
+                           "rpbot-keeper", str(ROOT), str(keeper), str(LAST_POSE), name])
         wrapper.write_text("#!/usr/bin/env bash\nset -eo pipefail\n"
                            + "if pgrep -u \"$(id -u)\" -f '[r]os2 launch pi5_slam_bringup robot.launch.py' >/dev/null; then\n"
                            + "  echo 'An existing robot session is running; left unchanged.' >&2; exit 75\nfi\n"
+                           + keep + " &\n"
                            + "exec " + shlex.join(command) + "\n")
         wrapper.chmod(0o755)
         units = Path.home() / ".config/systemd/user"
