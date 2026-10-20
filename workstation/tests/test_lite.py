@@ -104,6 +104,22 @@ class TileDeltaTests(unittest.TestCase):
         self.assertIn("png_b64", extension.map_update(10.0 + lite_stream.FULL_EVERY_S))
 
 
+class ResetTests(unittest.TestCase):
+    def test_a_slam_reset_clears_the_path_and_sends_a_full_image(self):
+        extension = LiteExtension()
+        known = [0] * (100 * 100)  # all free
+        extension.map = FakeMap(known, 100, 100, 0.0, 0.0)
+        extension.path, extension.path_total = [(0.0, 0.0), (1.0, 0.0)], 2
+        extension.map_update(0.0)
+        extension.path, extension.path_total = extension.path + [(2.0, 0.0)], 3
+        small = [0] * 100 + [255] * (100 * 100 - 100)  # Quét mới: a fresh map, mostly unknown
+        extension.map = FakeMap(small, 100, 100, 0.0, 0.0)
+        message = extension.map_update(5.0)
+        self.assertIn("png_b64", message)
+        self.assertEqual(message["path"], [])
+        self.assertEqual(LiveMapAssembler().feed(message)["path"], [])
+
+
 class SyncTests(unittest.TestCase):
     def bundle(self, name, image):
         info = dict(revision="rev-" + image.decode())

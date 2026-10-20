@@ -158,6 +158,7 @@ class LiteExtension:
         self.seq = 0
         self.path = []
         self.path_total = self.path_sent = 0
+        self.known_cells = 0
         self.uplink = None
         self.uplink_at = 0.0
 
@@ -221,9 +222,21 @@ class LiteExtension:
                 data["live_map"] = live_map
         return data
 
+    def new_map(self):
+        """SLAM reset (Quét mới) or another map (Nav): the old path and image no longer apply."""
+        self.path = []
+        self.path_sent = self.path_total
+        self.sent = None
+
     def map_update(self, now):
         """A full image, or only the changed tiles; None when nothing changed."""
         info = self.map.info
+        import numpy as np
+        known = int(np.count_nonzero(np.frombuffer(bytes(self.map.data), dtype=np.int8) != -1))
+        # A growing map never loses most of its known cells; a reset or a different map does.
+        if known < 0.5 * self.known_cells:
+            self.new_map()
+        self.known_cells = known
         image, step, left, top = occupancy_image(self.map.data, info.width, info.height, MAP_MAX_SIDE,
                                                  (info.origin.position.x, info.origin.position.y),
                                                  info.resolution)
